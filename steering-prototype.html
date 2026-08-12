@@ -2,165 +2,147 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Steering Match — Signal Test</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; }
   body {
     font-family: -apple-system, system-ui, sans-serif;
-    background: #0d1117;
-    color: #e6edf3;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
-    -webkit-user-select: none;
-    user-select: none;
+    background: #0d1117; color: #e6edf3;
+    display: flex; flex-direction: column; height: 100vh;
+    padding: env(safe-area-inset-top) 14px env(safe-area-inset-bottom);
+    -webkit-user-select: none; user-select: none;
   }
-  h1 { font-size: 18px; font-weight: 600; text-align: center; padding: 12px 0; }
+  h1 { font-size: 16px; font-weight: 600; text-align: center; padding: 8px 0; }
   #start {
-    margin: auto;
-    padding: 20px 32px;
-    font-size: 20px;
-    font-weight: 600;
-    background: #238636;
-    color: #fff;
-    border: none;
-    border-radius: 14px;
+    margin: auto; padding: 20px 32px; font-size: 20px; font-weight: 600;
+    background: #238636; color: #fff; border: none; border-radius: 14px;
   }
   #start:active { background: #1f6f2e; }
   .hidden { display: none !important; }
-  #game { display: flex; flex-direction: column; flex: 1; gap: 14px; }
+  #game { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
 
-  /* The tilt "wheel" */
-  #wheelWrap {
-    display: flex; align-items: center; justify-content: center;
-    padding: 8px 0;
-  }
-  #wheel {
-    width: 150px; height: 150px;
-    border-radius: 50%;
-    border: 10px solid #3d8bff;
-    position: relative;
-    transition: transform 0.02s linear;
-  }
-  #wheel::after {
-    content: ""; position: absolute;
-    top: 6px; left: 50%;
-    width: 8px; height: 34px;
-    background: #3d8bff;
-    transform: translateX(-50%);
-    border-radius: 4px;
-  }
+  .topRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; }
+  .card .label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
+  .card .val { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
-  .readout {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
-  .card {
-    background: #161b22; border: 1px solid #30363d;
-    border-radius: 10px; padding: 10px 12px;
-  }
-  .card .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
-  .card .val { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  /* One row per rotation axis */
+  .axis { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; }
+  .axis .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .axis .name { font-size: 12px; font-weight: 700; }
+  .axis .desc { font-size: 10px; color: #8b949e; }
+  .axis .now { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 22px; margin-top: 6px; background: #0d1117; border-radius: 6px; overflow: hidden; }
+  .center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #30363d; }
+  .fill { position: absolute; top: 4px; bottom: 4px; left: 50%; width: 0; border-radius: 4px; }
+  .peak { font-size: 10px; color: #8b949e; margin-top: 4px; }
 
-  /* Car-turn signal bar: this is the thing to watch */
-  #carBox { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; }
-  #carBox .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing:.5px; }
-  #barTrack {
-    position: relative; height: 26px; margin-top: 8px;
-    background: #0d1117; border-radius: 6px; overflow: hidden;
-  }
-  #barCenter { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #30363d; }
-  #barFill {
-    position: absolute; top: 4px; bottom: 4px; left: 50%;
-    width: 0; background: #f0883e; border-radius: 4px;
-    transform-origin: left center;
-  }
-  #peak { font-size: 11px; color: #8b949e; margin-top: 6px; }
+  #axA .fill { background: #3d8bff; }
+  #axB .fill { background: #f0883e; }
+  #axG .fill { background: #a371f7; }
 
-  .btnRow { display: flex; gap: 10px; margin-top: auto; }
+  .btnRow { display: flex; gap: 8px; }
   .btnRow button {
-    flex: 1; padding: 14px; font-size: 15px; font-weight: 600;
-    border: 1px solid #30363d; border-radius: 10px;
-    background: #21262d; color: #e6edf3;
+    flex: 1; padding: 12px; font-size: 14px; font-weight: 600;
+    border: 1px solid #30363d; border-radius: 10px; background: #21262d; color: #e6edf3;
   }
   .btnRow button:active { background: #30363d; }
   #log {
     background: #010409; border: 1px solid #30363d; border-radius: 8px;
-    font-family: ui-monospace, monospace; font-size: 11px;
-    color: #7ee787; height: 90px; overflow-y: auto;
-    padding: 8px; white-space: pre; line-height: 1.5;
+    font-family: ui-monospace, monospace; font-size: 10px; color: #7ee787;
+    flex: 1; min-height: 44px; overflow-y: auto; padding: 6px; white-space: pre; line-height: 1.5;
   }
-  .note { font-size: 11px; color: #6e7681; text-align: center; line-height: 1.5; }
+  .note { font-size: 10px; color: #6e7681; text-align: center; line-height: 1.4; }
 </style>
 </head>
 <body>
-  <h1>🏎️ Steering Match — Signal Test</h1>
+  <h1>🏎️ Steering Match — Axis Finder</h1>
 
   <button id="start">Tap to Start Sensors</button>
 
   <div id="game" class="hidden">
-    <div id="wheelWrap">
-      <div id="wheel"></div>
-    </div>
-
-    <div class="readout">
-      <div class="card">
-        <div class="label">Phone Tilt (roll)</div>
-        <div class="val" id="rollVal">0°</div>
-      </div>
+    <div class="topRow">
       <div class="card">
         <div class="label">Update Rate</div>
         <div class="val" id="hzVal">– Hz</div>
       </div>
+      <div class="card">
+        <div class="label">Screen</div>
+        <div class="val" id="oriVal" style="font-size:15px;">–</div>
+      </div>
     </div>
 
-    <div id="carBox">
-      <div class="label">Car Turn Signal (yaw rate) — watch this on a drive</div>
-      <div id="barTrack">
-        <div id="barCenter"></div>
-        <div id="barFill"></div>
+    <div class="axis" id="axA">
+      <div class="head">
+        <span class="name">α — spin / out of screen</span>
+        <span class="now" id="nowA">0.0</span>
       </div>
-      <div id="peak">peak: 0.0 °/s · left/right fills the bar when the car turns</div>
+      <div class="desc">rotating phone in its own plane (like a wheel held flat-ish)</div>
+      <div class="track"><div class="center"></div><div class="fill" id="fillA"></div></div>
+      <div class="peak" id="peakA">peak 0.0 °/s</div>
+    </div>
+
+    <div class="axis" id="axB">
+      <div class="head">
+        <span class="name">β — pitch / short edge</span>
+        <span class="now" id="nowB">0.0</span>
+      </div>
+      <div class="desc">tipping top of phone toward / away from you</div>
+      <div class="track"><div class="center"></div><div class="fill" id="fillB"></div></div>
+      <div class="peak" id="peakB">peak 0.0 °/s</div>
+    </div>
+
+    <div class="axis" id="axG">
+      <div class="head">
+        <span class="name">γ — roll / long edge</span>
+        <span class="now" id="nowG">0.0</span>
+      </div>
+      <div class="desc">rolling phone left / right along its long side</div>
+      <div class="track"><div class="center"></div><div class="fill" id="fillG"></div></div>
+      <div class="peak" id="peakG">peak 0.0 °/s</div>
     </div>
 
     <div class="btnRow">
       <button id="recBtn">● Record</button>
       <button id="markBtn">Mark Turn</button>
-      <button id="resetBtn">Reset Peak</button>
+      <button id="resetBtn">Reset Peaks</button>
     </div>
     <div class="btnRow">
       <button id="exportBtn">⬇ Export CSV</button>
     </div>
 
-    <div id="log">log ready…\n</div>
-    <div class="note">Roll = your kid tilting the phone. Yaw = the car actually turning.<br>Goal: can you see clear yaw spikes when the car corners?</div>
+    <div id="log">log ready…
+</div>
+    <div class="note">Steer the phone like a wheel → note which bar jumps (that's the player's motion).<br>Take a real corner → note which bar jumps (that's the car). They should be different axes.</div>
   </div>
 
 <script>
 (function () {
-  const startBtn = document.getElementById('start');
-  const game = document.getElementById('game');
-  const wheel = document.getElementById('wheel');
-  const rollVal = document.getElementById('rollVal');
-  const hzVal = document.getElementById('hzVal');
-  const barFill = document.getElementById('barFill');
-  const peakEl = document.getElementById('peak');
-  const logEl = document.getElementById('log');
-  const markBtn = document.getElementById('markBtn');
-  const resetBtn = document.getElementById('resetBtn');
+  const $ = id => document.getElementById(id);
+  const startBtn = $('start'), game = $('game'), logEl = $('log');
+  const hzVal = $('hzVal'), oriVal = $('oriVal');
+  const FULL = 40; // °/s that fills a bar; tune after a drive
 
-  let peakYaw = 0;
+  const ax = {
+    A: { now: $('nowA'), fill: $('fillA'), peakEl: $('peakA'), peak: 0 },
+    B: { now: $('nowB'), fill: $('fillB'), peakEl: $('peakB'), peak: 0 },
+    G: { now: $('nowG'), fill: $('fillG'), peakEl: $('peakG'), peak: 0 },
+  };
+
   let frames = 0, lastHzT = performance.now();
-  const YAW_FULL = 40; // deg/s that fills the bar fully; tune after a drive
+  let recording = false, recStart = 0, pendingMark = 0;
+  const rows = [];
+  let cur = { a: 0, b: 0, g: 0 };
 
-  // --- recording state ---
-  let recording = false;
-  let recStart = 0;
-  const rows = [];       // each: {t, roll, yawA, yawB, yawG, mark}
-  let lastRoll = 0;
-  let pendingMark = 0;   // set to 1 for the next sample when "Mark Turn" tapped
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (wakeLock === null && document.visibilityState === 'visible') keepAwake();
+  });
 
   function log(msg) {
     const t = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -168,75 +150,56 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // roll: side-to-side tilt (gamma). yaw rate: rotation about vertical (alpha rate),
-  // which is what the car's turning imparts to the phone.
-  function onOrientation(e) {
-    const roll = e.gamma || 0; // -90..90
-    lastRoll = roll;
-    rollVal.textContent = Math.round(roll) + '°';
-    wheel.style.transform = `rotate(${roll}deg)`;
-    frames++;
-    const now = performance.now();
-    if (now - lastHzT >= 1000) {
-      hzVal.textContent = frames + ' Hz';
-      frames = 0; lastHzT = now;
-    }
+  function screenOri() {
+    const a = (screen.orientation && screen.orientation.angle);
+    const ang = (typeof a === 'number') ? a : (window.orientation || 0);
+    if (ang === 90 || ang === -90 || ang === 270) return 'landscape';
+    return 'portrait';
   }
 
-  // rotationRate gives us angular velocity directly — cleaner for the car signal.
+  function drawBar(k, val) {
+    const a = ax[k];
+    a.now.textContent = val.toFixed(1);
+    const mag = Math.abs(val);
+    if (mag > a.peak) { a.peak = mag; a.peakEl.textContent = `peak ${mag.toFixed(1)} °/s`; }
+    const frac = Math.max(-1, Math.min(1, val / FULL));
+    if (frac >= 0) { a.fill.style.left = '50%'; a.fill.style.width = (frac * 50) + '%'; }
+    else { a.fill.style.left = (50 + frac * 50) + '%'; a.fill.style.width = (-frac * 50) + '%'; }
+  }
+
   function onMotion(e) {
     const rr = e.rotationRate;
     if (!rr) return;
-    // alpha = rotation around the screen-facing axis ≈ car yaw when phone is flat-ish
-    const yaw = rr.alpha || 0;
-    // record the full sample while recording is on
+    cur = { a: rr.alpha || 0, b: rr.beta || 0, g: rr.gamma || 0 };
+    drawBar('A', cur.a); drawBar('B', cur.b); drawBar('G', cur.g);
+
+    frames++;
+    const now = performance.now();
+    if (now - lastHzT >= 1000) { hzVal.textContent = frames + ' Hz'; frames = 0; lastHzT = now; oriVal.textContent = screenOri(); }
+
     if (recording) {
       rows.push({
-        t: ((performance.now() - recStart) / 1000).toFixed(3),
-        roll: lastRoll.toFixed(2),
-        yawA: yaw.toFixed(2),
-        yawB: (rr.beta || 0).toFixed(2),
-        yawG: (rr.gamma || 0).toFixed(2),
-        mark: pendingMark
+        t: ((now - recStart) / 1000).toFixed(3),
+        a: cur.a.toFixed(2), b: cur.b.toFixed(2), g: cur.g.toFixed(2),
+        ori: screenOri(), mark: pendingMark
       });
       pendingMark = 0;
-    }
-    const mag = Math.abs(yaw);
-    if (mag > peakYaw) {
-      peakYaw = mag;
-      peakEl.textContent = `peak: ${peakYaw.toFixed(1)} °/s · fills at ${YAW_FULL}°/s`;
-    }
-    const frac = Math.max(-1, Math.min(1, yaw / YAW_FULL));
-    // draw from center: positive right, negative left
-    if (frac >= 0) {
-      barFill.style.left = '50%';
-      barFill.style.width = (frac * 50) + '%';
-    } else {
-      barFill.style.left = (50 + frac * 50) + '%';
-      barFill.style.width = (-frac * 50) + '%';
     }
   }
 
   function begin() {
-    window.addEventListener('deviceorientation', onOrientation);
     window.addEventListener('devicemotion', onMotion);
     startBtn.classList.add('hidden');
     game.classList.remove('hidden');
-    log('sensors started');
+    oriVal.textContent = screenOri();
+    keepAwake();
+    log('sensors started (' + screenOri() + ')');
   }
 
   startBtn.addEventListener('click', async () => {
     try {
-      // iOS 13+ requires explicit permission, triggered by a tap.
-      const needOrient = typeof DeviceOrientationEvent !== 'undefined'
-        && typeof DeviceOrientationEvent.requestPermission === 'function';
       const needMotion = typeof DeviceMotionEvent !== 'undefined'
         && typeof DeviceMotionEvent.requestPermission === 'function';
-
-      if (needOrient) {
-        const p = await DeviceOrientationEvent.requestPermission();
-        if (p !== 'granted') { alert('Motion permission denied. Reload and allow it.'); return; }
-      }
       if (needMotion) {
         const p = await DeviceMotionEvent.requestPermission();
         if (p !== 'granted') { alert('Motion permission denied. Reload and allow it.'); return; }
@@ -247,49 +210,35 @@
     }
   });
 
-  const recBtn = document.getElementById('recBtn');
-  const exportBtn = document.getElementById('exportBtn');
-
-  recBtn.addEventListener('click', () => {
+  $('recBtn').addEventListener('click', () => {
     recording = !recording;
-    if (recording) {
-      recStart = performance.now();
-      recBtn.textContent = '■ Stop';
-      recBtn.style.background = '#8b2c2c';
-      log('recording started');
-    } else {
-      recBtn.textContent = '● Record';
-      recBtn.style.background = '';
-      log(`recording stopped — ${rows.length} samples captured`);
-    }
+    const b = $('recBtn');
+    if (recording) { recStart = performance.now(); b.textContent = '■ Stop'; b.style.background = '#8b2c2c'; log('recording started'); }
+    else { b.textContent = '● Record'; b.style.background = ''; log(`recording stopped — ${rows.length} samples`); }
   });
 
-  markBtn.addEventListener('click', () => {
-    pendingMark = 1; // flags the next recorded sample
-    log(`MARK — peak since reset: ${peakYaw.toFixed(1)} °/s${recording ? ' (logged)' : ''}`);
+  $('markBtn').addEventListener('click', () => {
+    pendingMark = 1;
+    log(`MARK  α${cur.a.toFixed(1)} β${cur.b.toFixed(1)} γ${cur.g.toFixed(1)}${recording ? ' (logged)' : ''}`);
   });
 
-  exportBtn.addEventListener('click', () => {
-    if (rows.length === 0) { alert('No data recorded yet. Tap ● Record, drive, then Stop.'); return; }
-    let csv = 't_sec,roll_deg,yaw_alpha,yaw_beta,yaw_gamma,mark\n';
-    for (const r of rows) csv += `${r.t},${r.roll},${r.yawA},${r.yawB},${r.yawG},${r.mark}\n`;
+  $('resetBtn').addEventListener('click', () => {
+    for (const k of ['A','B','G']) { ax[k].peak = 0; ax[k].peakEl.textContent = 'peak 0.0 °/s'; }
+    log('peaks reset');
+  });
+
+  $('exportBtn').addEventListener('click', () => {
+    if (rows.length === 0) { alert('No data yet. Tap Record, drive, then Stop.'); return; }
+    let csv = 't_sec,alpha,beta,gamma,orientation,mark\n';
+    for (const r of rows) csv += `${r.t},${r.a},${r.b},${r.g},${r.ori},${r.mark}\n`;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    a.href = url;
-    a.download = `steering-log-${stamp}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = url; a.download = `steering-log-${stamp}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     log(`exported ${rows.length} rows`);
-  });
-
-  resetBtn.addEventListener('click', () => {
-    peakYaw = 0;
-    peakEl.textContent = `peak: 0.0 °/s · fills at ${YAW_FULL}°/s`;
-    log('peak reset');
   });
 })();
 </script>
