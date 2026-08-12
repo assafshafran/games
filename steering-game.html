@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Steering Hero</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #0d1117; color: #e6edf3;
+    -webkit-user-select: none; user-select: none;
+    position: fixed; inset: 0;
+  }
+  #cv { position: fixed; inset: 0; display: block; }
+  .hidden { display: none !important; }
+
+  #menu {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+    background: radial-gradient(ellipse at 50% 30%, #16233b 0%, #0d1117 70%);
+    overflow-y: auto; text-align: center;
+  }
+  #menu h1 { font-size: 30px; }
+  #menu .sub { color: #8b949e; font-size: 14px; max-width: 420px; }
+  #menu button {
+    font-size: 18px; font-weight: 700; color: #fff; border: none; border-radius: 12px;
+    padding: 14px 30px; min-width: 240px;
+  }
+  #demoBtn { background: #238636; }
+  #demoBtn:active { background: #1f6f2e; }
+  #liveBtn { background: #1f6feb; }
+  #liveBtn:active { background: #1a5cc4; }
+  #menu label { color: #8b949e; font-size: 14px; }
+  #menu .hint { color: #8b949e; font-size: 13px; max-width: 420px; line-height: 1.45; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud > * { position: fixed; }
+  #score {
+    top: calc(8px + env(safe-area-inset-top)); left: 14px;
+    font-size: 24px; font-weight: 800; color: #e6edf3;
+  }
+  #combo {
+    top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    font-size: 24px; font-weight: 800; color: #d29922; transition: transform .15s;
+  }
+  #combo.hot { color: #f0883e; }
+  #timer {
+    top: calc(8px + env(safe-area-inset-top)); right: 14px;
+    font-size: 24px; font-weight: 700; color: #8b949e; font-variant-numeric: tabular-nums;
+  }
+  #pop {
+    top: 24%; left: 0; right: 0; text-align: center;
+    font-size: 36px; font-weight: 900; opacity: 0;
+    text-shadow: 0 2px 12px rgba(0,0,0,.6);
+  }
+  #pop.show { animation: pop 1.2s ease-out; }
+  #pop.good { color: #3fb950; }
+  #pop.bad { color: #f85149; }
+  @keyframes pop {
+    0% { opacity: 0; transform: scale(.6); }
+    15% { opacity: 1; transform: scale(1.18); }
+    30% { transform: scale(1); }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  #banner {
+    top: 36%; left: 0; right: 0; text-align: center;
+    font-size: 20px; font-weight: 700; color: #d29922;
+    text-shadow: 0 2px 10px rgba(0,0,0,.7);
+  }
+  #recenter, #quit {
+    pointer-events: auto; border: 1px solid #30363d; background: rgba(22,27,34,.8);
+    color: #8b949e; border-radius: 10px; font-size: 14px; padding: 8px 12px;
+  }
+  #recenter { bottom: calc(12px + env(safe-area-inset-bottom)); left: 12px; }
+  #quit { top: calc(46px + env(safe-area-inset-top)); right: 12px; }
+
+  #end {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    background: rgba(13,17,23,.92); text-align: center; padding: 24px;
+  }
+  #stars { font-size: 40px; }
+  #sum { color: #8b949e; font-size: 16px; line-height: 1.6; }
+  #end button {
+    font-size: 17px; font-weight: 700; color: #fff; border: none; border-radius: 12px;
+    padding: 12px 26px; min-width: 220px;
+  }
+  #again { background: #238636; }
+  #menuBtn { background: #21262d; border: 1px solid #30363d !important; }
+  #toast {
+    position: fixed; bottom: calc(56px + env(safe-area-inset-bottom)); left: 0; right: 0;
+    text-align: center; color: #8b949e; font-size: 13px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="menu">
+  <h1>🕹️ Steering Hero</h1>
+  <p class="sub">Hold the phone sideways like a steering wheel. Tilt to steer — keep your blue needle on the gold ghost needle as the road turns.</p>
+  <button id="demoBtn">▶ Demo Drive</button>
+  <button id="liveBtn">📍 Real Drive (beta)</button>
+  <label><input type="checkbox" id="flip"> Invert steering</label>
+  <p class="hint">Nail a turn for PERFECT points. Hold alignment to grow your combo. When a fork appears — tilt and hold to <b>call the turn</b> before the car commits. Demo Drive works anywhere (drag the wheel with a finger on desktop). Real Drive needs location + motion permissions and fetches nearby roads from OpenStreetMap.</p>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="score">0</div>
+  <div id="combo">x1</div>
+  <div id="timer">1:00</div>
+  <div id="pop"></div>
+  <div id="banner" class="hidden"></div>
+  <button id="recenter">⟲ center wheel</button>
+  <button id="quit">✕</button>
+</div>
+
+<div id="end" class="hidden">
+  <h2 id="stars"></h2>
+  <div id="sum"></div>
+  <button id="again">Next round ▶</button>
+  <button id="menuBtn">Menu</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrap180 = d => { d = d % 360; if (d > 180) d -= 360; if (d < -180) d += 360; return d; };
+
+// Set after the axis-finder (steering-prototype.html) validation run tells us
+// which rotationRate axis carries the car's yaw. 'alpha'|'beta'|'gamma'.
+const LIVE_YAW_AXIS = 'alpha';
+const STEER_GAIN = 4.5;   // deg of wheel per deg/s of yaw
+const WHEEL_ROT = 2;      // visual wheel rotation per deg of input
+const DS = 4;             // road sample spacing, meters
+
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+resize();
+
+let toastT = null;
+function toast(msg) {
+  $('toast').textContent = msg;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => { $('toast').textContent = ''; }, 4000);
+}
+
+// ---------- demo road ----------
+function buildDemoRoad(total) {
+  const pts = [], junctions = [];
+  let x = 0, y = 0, h = 0, s = 0;
+  const emit = c => { pts.push({ x, y, h, c, s }); h += c * DS; x += Math.sin(h) * DS; y += Math.cos(h) * DS; s += DS; };
+  const straight = len => { for (let d = 0; d < len; d += DS) emit(0); };
+  const arc = (r, len, sign) => { const c = sign / r; for (let d = 0; d < len; d += DS) emit(c); };
+  const mkJ = dir => ({ s: s + 10, dir, announced: false, locked: false, guess: 0, resolved: false });
+  while (s < total) {
+    straight(60 + Math.random() * 100);
+    arc(160 + Math.random() * 240, 60 + Math.random() * 80, Math.random() < 0.5 ? 1 : -1);
+    if (Math.random() < 0.25) { junctions.push(mkJ(0)); straight(90 + Math.random() * 60); }
+    else straight(50 + Math.random() * 90);
+    const sign = Math.random() < 0.5 ? 1 : -1;
+    if (Math.random() < 0.6) junctions.push(mkJ(sign));
+    const R = 28 + Math.random() * 18, ang = (70 + Math.random() * 40) * Math.PI / 180;
+    arc(R, R * ang, sign);
+  }
+  return { pts, junctions, length: s };
+}
+function roadSample(road, s) {
+  s = clamp(s, 0, road.length - DS - 0.01);
+  const i = Math.floor(s / DS), a = road.pts[i], b = road.pts[i + 1] || a, t = (s - a.s) / DS;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: a.h, c: a.c };
+}
+function rel(car, p) {
+  const dx = p.x - car.x, dy = p.y - car.y, sh = Math.sin(car.h), ch = Math.cos(car.h);
+  return { fwd: dx * sh + dy * ch, side: dx * ch - dy * sh };
+}
+
+// ---------- providers ----------
+const demo = {
+  name: 'demo', road: null, s: 0, speed: 9,
+  start(durS) { this.road = buildDemoRoad(this.speed * durS + 500); this.s = 0; return Promise.resolve(); },
+  frame(dt) {
+    this.s += this.speed * dt;
+    if (this.s > this.road.length - 80) this.s = 0;
+    const car = roadSample(this.road, this.s);
+    const yawDeg = car.c * this.speed * 180 / Math.PI;
+    const rib = [];
+    for (let d = -6; d < 240; d += DS) rib.push(rel(car, roadSample(this.road, this.s + d)));
+    const juncs = [];
+    for (const j of this.road.junctions) {
+      const dd = j.s - this.s;
+      if (dd > -12 && dd < 240) juncs.push({ j, dist: dd, rel: rel(car, roadSample(this.road, j.s)) });
+    }
+    return { yawDeg, rib, juncs };
+  }
+};
+
+const live = {
+  name: 'live', ways: null, org: null, pos: null, disp: null, head: 0, yawLP: 0,
+  lastP: null, watchId: null, branches: [],
+  toXY(lat, lon) {
+    return { x: (lon - this.org[1]) * 111320 * Math.cos(this.org[0] * Math.PI / 180), y: (lat - this.org[0]) * 110540 };
+  },
+  start() {
+    return new Promise((res, rej) => {
+      if (!navigator.geolocation) return rej(new Error('no geolocation'));
+      let got = false;
+      this.watchId = navigator.geolocation.watchPosition(f => {
+        const { latitude: lat, longitude: lon } = f.coords;
+        if (!this.org) { this.org = [lat, lon]; this.fetchRoads(lat, lon); }
+        const p = this.toXY(lat, lon);
+        if (this.lastP) {
+          const dx = p.x - this.lastP.x, dy = p.y - this.lastP.y;
+          if (Math.hypot(dx, dy) > 3) { this.head = Math.atan2(dx, dy); this.lastP = p; }
+        } else this.lastP = p;
+        if (typeof f.coords.heading === 'number' && !isNaN(f.coords.heading) && f.coords.speed > 2)
+          this.head = f.coords.heading * Math.PI / 180;
+        this.pos = p;
+        if (!this.disp) this.disp = { x: p.x, y: p.y };
+        if (!got) { got = true; res(); }
+      }, e => { if (!got) rej(e); }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+    });
+  },
+  stop() { if (this.watchId != null) navigator.geolocation.clearWatch(this.watchId); this.watchId = null; },
+  async fetchRoads(lat, lon) {
+    try {
+      const q = `[out:json][timeout:12];way(around:900,${lat},${lon})[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)$"];out geom;`;
+      const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+      const js = await r.json();
+      this.ways = js.elements
+        .filter(e => e.type === 'way' && e.geometry && e.nodes)
+        .map(w => ({ id: w.id, nodes: w.nodes, pts: w.geometry.map(g => this.toXY(g.lat, g.lon)) }));
+      toast(`fetched ${this.ways.length} road segments from OpenStreetMap`);
+    } catch (e) {
+      this.ways = null;
+      toast('road fetch failed — running on yaw-only ribbon');
+    }
+  },
+  buildRib(car) {
+    // nearest way vertex to the car
+    let best = null;
+    for (const w of this.ways) for (let i = 0; i < w.pts.length; i++) {
+      const d = (w.pts[i].x - car.x) ** 2 + (w.pts[i].y - car.y) ** 2;
+      if (!best || d < best.d) best = { w, i, d };
+    }
+    if (!best || best.d > 6400) return null; // >80m off any road
+    const hv = { x: Math.sin(car.h), y: Math.cos(car.h) };
+    let cw = best.w, ci = best.i, cdir = 1;
+    const k = Math.min(cw.pts.length - 2, ci);
+    const sx = cw.pts[k + 1].x - cw.pts[k].x, sy = cw.pts[k + 1].y - cw.pts[k].y;
+    if (sx * hv.x + sy * hv.y < 0) cdir = -1;
+    const out = [], branches = [], used = new Set([cw.id]);
+    let total = 0, prev = null;
+    for (let hop = 0; hop < 6 && total < 350; hop++) {
+      const pts = cdir === 1 ? cw.pts.slice(ci) : cw.pts.slice(0, ci + 1).reverse();
+      for (const p of pts) {
+        if (prev) total += Math.hypot(p.x - prev.x, p.y - prev.y);
+        out.push(p); prev = p;
+        if (total > 350) break;
+      }
+      if (total > 350) break;
+      const endNode = cdir === 1 ? cw.nodes[cw.nodes.length - 1] : cw.nodes[0];
+      const conts = [];
+      for (const w2 of this.ways) {
+        if (used.has(w2.id)) continue;
+        if (w2.nodes[0] === endNode) conts.push({ w: w2, i: 0, dir: 1 });
+        else if (w2.nodes[w2.nodes.length - 1] === endNode) conts.push({ w: w2, i: w2.pts.length - 1, dir: -1 });
+      }
+      if (!conts.length) break;
+      let lastDir = hv;
+      if (out.length > 1) {
+        const a = out[out.length - 2], b = out[out.length - 1];
+        const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        lastDir = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      }
+      let bestC = null;
+      for (const c of conts) {
+        const q0 = c.w.pts[c.i], q1 = c.w.pts[c.dir === 1 ? c.i + 1 : c.i - 1];
+        if (!q1) continue;
+        const L = Math.hypot(q1.x - q0.x, q1.y - q0.y) || 1;
+        const dot = (q1.x - q0.x) / L * lastDir.x + (q1.y - q0.y) / L * lastDir.y;
+        if (!bestC || dot > bestC.dot) bestC = Object.assign({}, c, { dot });
+      }
+      if (!bestC) break;
+      if (conts.length > 1 && out.length) branches.push({ x: prev.x, y: prev.y });
+      used.add(bestC.w.id); cw = bestC.w; ci = bestC.i; cdir = bestC.dir;
+    }
+    this.branches = branches;
+    return out;
+  },
+  frame(dt) {
+    if (this.pos && this.disp) {
+      const k = Math.min(1, dt * 3);
+      this.disp.x += (this.pos.x - this.disp.x) * k;
+      this.disp.y += (this.pos.y - this.disp.y) * k;
+    }
+    const rr = (motionRot && typeof motionRot[LIVE_YAW_AXIS] === 'number') ? motionRot[LIVE_YAW_AXIS] : 0;
+    this.yawLP += (rr - this.yawLP) * Math.min(1, dt * 1.2); // ~0.2 Hz low-pass: the "car" component
+    const yawDeg = this.yawLP;
+    const car = { x: this.disp ? this.disp.x : 0, y: this.disp ? this.disp.y : 0, h: this.head };
+    let rib = null, juncs = [];
+    if (this.ways) {
+      const path = this.buildRib(car);
+      if (path) {
+        rib = path.map(p => rel(car, p));
+        juncs = this.branches
+          .map(b => ({ j: null, dist: 0, rel: rel(car, b) }))
+          .filter(q => q.rel.fwd > 3 && q.rel.fwd < 240);
+      }
+    }
+    if (!rib) {
+      // yaw-only ribbon: the road ahead curls the way the car is actually turning
+      rib = [];
+      const c = (yawDeg * Math.PI / 180) / 8;
+      let px = 0, py = 0, ph = 0;
+      for (let d = 0; d < 240; d += 6) {
+        rib.push({ fwd: py, side: px });
+        px += Math.sin(ph) * 6; py += Math.cos(ph) * 6; ph += c * 6;
+      }
+    }
+    return { yawDeg, rib, juncs };
+  }
+};
+
+// ---------- input ----------
+let motionGrav = null, motionRot = null, motionSeen = false;
+window.addEventListener('devicemotion', e => {
+  if (e.accelerationIncludingGravity) { motionGrav = e.accelerationIncludingGravity; motionSeen = true; }
+  if (e.rotationRate) motionRot = e.rotationRate;
+});
+function rawTilt() {
+  if (!motionGrav) return null;
+  const a = (((screen.orientation && screen.orientation.angle) || window.orientation || 0)) * Math.PI / 180;
+  const gx = motionGrav.x || 0, gy = motionGrav.y || 0;
+  const sx = gx * Math.cos(a) + gy * Math.sin(a);
+  const sy = -gx * Math.sin(a) + gy * Math.cos(a);
+  return Math.atan2(-sx, -sy) * 180 / Math.PI;
+}
+async function askMotion() {
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const r = await DeviceMotionEvent.requestPermission();
+      return r === 'granted';
+    }
+  } catch (e) { /* fall through */ }
+  return true;
+}
+
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  if (e.clientY > H * 0.45) { drag = { x0: e.clientX, base: G.wheel }; cv.setPointerCapture(e.pointerId); }
+});
+cv.addEventListener('pointermove', e => {
+  if (drag) G.wheelRaw = clamp(drag.base + (e.clientX - drag.x0) * 0.45, -90, 90);
+});
+cv.addEventListener('pointerup', () => { drag = null; });
+cv.addEventListener('pointercancel', () => { drag = null; });
+
+// ---------- game state ----------
+const ROUNDS = [60, 120, 180];
+const G = {
+  state: 'menu', provider: null, roundIdx: 0, timeLeft: 0,
+  score: 0, combo: 1, comboT: 0, badT: 0, win: null,
+  wheel: 0, wheelRaw: 0, target: 0, baseline: null, baseSamples: [],
+  best: { combo: 1, perfects: 0, calls: 0 }
+};
+const flipSign = () => ($('flip').checked ? -1 : 1);
+try { $('flip').checked = localStorage.getItem('sh_flip') === '1'; } catch (e) {}
+$('flip').addEventListener('change', () => { try { localStorage.setItem('sh_flip', $('flip').checked ? '1' : '0'); } catch (e) {} });
+
+function popMsg(txt, cls) {
+  const p = $('pop');
+  p.textContent = txt; p.className = '';
+  void p.offsetWidth;
+  p.className = 'show ' + cls;
+}
+function banner(txt) { const b = $('banner'); b.textContent = txt; b.classList.remove('hidden'); }
+function hideBanner() { $('banner').classList.add('hidden'); }
+
+async function startRound(provider) {
+  G.provider = provider;
+  const dur = ROUNDS[Math.min(G.roundIdx, ROUNDS.length - 1)];
+  try {
+    await provider.start(dur);
+  } catch (e) {
+    toast('could not start: ' + (e && e.message ? e.message : e));
+    return;
+  }
+  G.timeLeft = dur; G.score = 0; G.combo = 1; G.comboT = 0; G.badT = 0; G.win = null;
+  G.wheel = 0; G.wheelRaw = 0; G.baseline = null; G.baseSamples = [];
+  G.best = { combo: 1, perfects: 0, calls: 0 };
+  $('menu').classList.add('hidden'); $('end').classList.add('hidden'); $('hud').classList.remove('hidden');
+  hideBanner();
+  G.state = 'play';
+}
+function endRound() {
+  G.state = 'end';
+  if (G.provider === live) live.stop();
+  $('hud').classList.add('hidden');
+  const dur = ROUNDS[Math.min(G.roundIdx, ROUNDS.length - 1)];
+  const rate = G.score / dur;
+  const stars = rate >= 45 ? 3 : rate >= 28 ? 2 : rate >= 12 ? 1 : 0;
+  $('stars').textContent = '★★★☆☆☆'.slice(3 - stars, 6 - stars);
+  $('sum').innerHTML = `Score <b>${Math.floor(G.score)}</b> · best combo x${G.best.combo}` +
+    ` · perfect turns ${G.best.perfects} · calls made ${G.best.calls}`;
+  const next = ROUNDS[Math.min(G.roundIdx + 1, ROUNDS.length - 1)];
+  $('again').textContent = `Next round (${Math.round(next / 60)} min) ▶`;
+  $('end').classList.remove('hidden');
+}
+$('demoBtn').addEventListener('click', async () => { await askMotion(); G.roundIdx = 0; startRound(demo); });
+$('liveBtn').addEventListener('click', async () => { await askMotion(); G.roundIdx = 0; startRound(live); });
+$('again').addEventListener('click', () => { G.roundIdx = Math.min(G.roundIdx + 1, ROUNDS.length - 1); startRound(G.provider); });
+$('menuBtn').addEventListener('click', () => { G.state = 'menu'; $('end').classList.add('hidden'); $('menu').classList.remove('hidden'); });
+$('quit').addEventListener('click', () => {
+  if (G.provider === live) live.stop();
+  G.state = 'menu'; $('hud').classList.add('hidden'); $('menu').classList.remove('hidden');
+});
+$('recenter').addEventListener('click', () => {
+  const t = rawTilt();
+  if (t != null) { G.baseline = t; toast('wheel recentered'); }
+});
+
+// ---------- tick ----------
+function tick(dt, fr) {
+  // input: tilt (calibrated) unless dragging
+  const t = rawTilt();
+  if (!drag && t != null) {
+    if (G.baseline == null) {
+      G.baseSamples.push(t);
+      if (G.baseSamples.length >= 20) G.baseline = G.baseSamples.reduce((a, b) => a + b, 0) / G.baseSamples.length;
+    } else {
+      G.wheelRaw = clamp(wrap180(t - G.baseline) * flipSign(), -90, 90);
+    }
+  }
+  G.wheel += (G.wheelRaw - G.wheel) * Math.min(1, dt * 12);
+  G.target = clamp(fr.yawDeg * STEER_GAIN, -85, 85);
+  const err = Math.abs(G.wheel - G.target);
+
+  // combo + flow score
+  if (err < 14) {
+    G.comboT += dt; G.badT = 0;
+    if (G.comboT > 2.5 && G.combo < 8) { G.combo++; G.comboT = 0; $('combo').classList.add('hot'); setTimeout(() => $('combo').classList.remove('hot'), 400); }
+    G.score += 10 * G.combo * dt;
+  } else if (err > 30) {
+    G.badT += dt;
+    if (G.badT > 0.6 && G.combo > 1) { G.combo = 1; G.comboT = 0; }
+  } else G.badT = 0;
+  G.best.combo = Math.max(G.best.combo, G.combo);
+
+  // turn windows (judged on the yaw truth)
+  if (!G.win && Math.abs(G.target) > 26) G.win = { errSum: 0, t: 0 };
+  if (G.win) {
+    G.win.errSum += err * dt; G.win.t += dt;
+    if (Math.abs(G.target) < 18) {
+      if (G.win.t > 0.7) {
+        const avg = G.win.errSum / G.win.t;
+        if (avg < 10) { G.best.perfects++; G.score += 120 * G.combo; popMsg(`PERFECT! +${120 * G.combo}`, 'good'); }
+        else if (avg < 20) { G.score += 70 * G.combo; popMsg(`GREAT +${70 * G.combo}`, 'good'); }
+        else if (avg < 32) { G.score += 30 * G.combo; popMsg(`OK +${30 * G.combo}`, 'good'); }
+        else popMsg('MISSED TURN', 'bad');
+      }
+      G.win = null;
+    }
+  }
+
+  // junction "call it!" (demo provider carries junction state)
+  for (const q of fr.juncs) {
+    const j = q.j;
+    if (!j) continue;
+    if (!j.announced && q.dist < 130) { j.announced = true; banner('🔀 Fork ahead — call it! Tilt & hold'); }
+    if (!j.locked && q.dist < 18) {
+      j.locked = true;
+      j.guess = G.wheel > 15 ? 1 : G.wheel < -15 ? -1 : 0;
+      banner('Locked: ' + (j.guess === 1 ? 'RIGHT ➡' : j.guess === -1 ? '⬅ LEFT' : '⬆ STRAIGHT'));
+    }
+    if (!j.resolved && q.dist < -4) {
+      j.resolved = true; hideBanner(); G.best.calls++;
+      if (j.guess === j.dir) { G.score += 250; popMsg('CALLED IT! +250', 'good'); }
+      else popMsg('WRONG CALL', 'bad');
+    }
+  }
+
+  // timer
+  G.timeLeft -= dt;
+  if (G.timeLeft <= 0) endRound();
+
+  // HUD
+  $('score').textContent = Math.floor(G.score);
+  $('combo').textContent = 'x' + G.combo;
+  const tl = Math.max(0, Math.ceil(G.timeLeft));
+  $('timer').textContent = Math.floor(tl / 60) + ':' + String(tl % 60).padStart(2, '0');
+}
+
+// ---------- render ----------
+function render(fr) {
+  ctx.clearRect(0, 0, W, H);
+  const hor = H * 0.40;
+  let g = ctx.createLinearGradient(0, 0, 0, hor);
+  g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#16233b');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, hor);
+  g = ctx.createLinearGradient(0, hor, 0, H);
+  g.addColorStop(0, '#101a13'); g.addColorStop(1, '#0a1109');
+  ctx.fillStyle = g; ctx.fillRect(0, hor, W, H - hor);
+
+  const f = H * 0.95, camH = 1.5, HW = 3.4;
+  const L = [], R = [], C = [];
+  for (const p of fr.rib) {
+    if (p.fwd < 1.6) continue;
+    const sc = f / p.fwd, y = hor + camH * sc;
+    if (y > H + 80) continue;
+    L.push([W / 2 + (p.side - HW) * sc, y]);
+    R.push([W / 2 + (p.side + HW) * sc, y]);
+    C.push([W / 2 + p.side * sc, y, sc]);
+  }
+  if (L.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < L.length; i++) ctx.lineTo(L[i][0], L[i][1]);
+    for (let i = R.length - 1; i >= 0; i--) ctx.lineTo(R[i][0], R[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = '#2b3138'; ctx.fill();
+    ctx.strokeStyle = '#6e7681'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < L.length; i++) ctx.lineTo(L[i][0], L[i][1]);
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(R[0][0], R[0][1]);
+    for (let i = 1; i < R.length; i++) ctx.lineTo(R[i][0], R[i][1]);
+    ctx.stroke();
+    ctx.strokeStyle = '#c9a227';
+    for (let i = 0; i < C.length - 1; i++) {
+      if (i % 2 === 0) {
+        ctx.lineWidth = Math.max(1, 0.20 * C[i][2]);
+        ctx.beginPath(); ctx.moveTo(C[i][0], C[i][1]); ctx.lineTo(C[i + 1][0], C[i + 1][1]); ctx.stroke();
+      }
+    }
+  }
+
+  // junction diamonds floating above the fork
+  for (const q of fr.juncs) {
+    const p = q.rel;
+    if (p.fwd < 3) continue;
+    const sc = f / p.fwd;
+    const x = W / 2 + p.side * sc, y = hor + (camH - 2.6) * sc;
+    const s = clamp(1.2 * sc * 0.12, 7, 46);
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#d29922';
+    ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.restore();
+    ctx.fillStyle = '#0d1117';
+    ctx.font = `bold ${Math.round(s * 0.8)}px -apple-system,system-ui,sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('?', x, y + 1);
+  }
+
+  drawWheel();
+}
+function drawWheel() {
+  const cx = W / 2, cy = H - 26, r = Math.min(H * 0.30, W * 0.16, 110);
+  const aligned = Math.abs(G.wheel - G.target) < 14;
+  // ghost target needle
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(G.target * WHEEL_ROT * Math.PI / 180);
+  ctx.fillStyle = '#c9a227';
+  ctx.beginPath();
+  ctx.moveTo(0, -r - 16); ctx.lineTo(-9, -r - 34); ctx.lineTo(9, -r - 34);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // wheel
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(G.wheel * WHEEL_ROT * Math.PI / 180);
+  ctx.strokeStyle = aligned ? '#2ea043' : '#58a6ff';
+  ctx.lineWidth = 11;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 6;
+  for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * (r - 6), Math.sin(a) * (r - 6)); ctx.stroke();
+  }
+  ctx.fillStyle = aligned ? '#3fb950' : '#79c0ff';
+  ctx.beginPath();
+  ctx.moveTo(0, -r + 4); ctx.lineTo(-8, -r + 24); ctx.lineTo(8, -r + 24);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- main loop ----------
+let lastT = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - lastT) / 1000 || 0.016);
+  lastT = now;
+  if (G.state !== 'play') return;
+  const fr = G.provider.frame(dt);
+  tick(dt, fr);
+  if (G.state === 'play') render(fr);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
