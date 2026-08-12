@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Steering Hero">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1117">
 <title>Steering Hero</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -112,6 +117,7 @@
   <button id="liveBtn">📍 Real Drive (beta)</button>
   <label><input type="checkbox" id="flip"> Invert steering</label>
   <p class="hint">Nail a turn for PERFECT points. Hold alignment to grow your combo. When a fork appears — tilt and hold to <b>call the turn</b> before the car commits. Demo Drive works anywhere (drag the wheel with a finger on desktop). Real Drive needs location + motion permissions and fetches nearby roads from OpenStreetMap.</p>
+  <p class="hint">📱 <b>True fullscreen on iPhone:</b> Safari → Share → <b>Add to Home Screen</b>, then launch from the icon — no URL bar, no tabs. (Android goes fullscreen automatically on start.)</p>
 </div>
 
 <div id="hud" class="hidden">
@@ -207,7 +213,7 @@ function rel(car, p) {
 
 // ---------- providers ----------
 const demo = {
-  name: 'demo', road: null, s: 0, speed: 9,
+  name: 'demo', road: null, s: 0, speed: 16, // ~58 km/h — fast enough that turns demand real steering
   start(durS) { this.road = buildDemoRoad(this.speed * durS + 500); this.s = 0; return Promise.resolve(); },
   frame(dt) {
     this.s += this.speed * dt;
@@ -392,6 +398,19 @@ async function askMotion() {
   return true;
 }
 
+// Fullscreen: real API where it exists (Android Chrome, iPad). iPhone Safari
+// has no element fullscreen — there, standalone mode via Add to Home Screen
+// (the apple-mobile-web-app meta tags) is the way to lose the browser chrome.
+async function goFullscreen() {
+  const el = document.documentElement;
+  try {
+    if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+    else if (!document.webkitFullscreenElement && el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch (e) { /* unsupported — standalone mode covers iPhone */ }
+  try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (e) {}
+  setTimeout(resize, 300);
+}
+
 let drag = null;
 cv.addEventListener('pointerdown', e => {
   const p = ptr(e);
@@ -411,9 +430,12 @@ const G = {
   wheel: 0, wheelRaw: 0, target: 0, baseline: null, baseSamples: [],
   best: { combo: 1, perfects: 0, calls: 0 }
 };
-const flipSign = () => ($('flip').checked ? -1 : 1);
-try { $('flip').checked = localStorage.getItem('sh_flip') === '1'; } catch (e) {}
-$('flip').addEventListener('change', () => { try { localStorage.setItem('sh_flip', $('flip').checked ? '1' : '0'); } catch (e) {} });
+// Default direction matches real-world testing (Assaf had to invert v1, so
+// the unchecked mapping is now the old inverted one). New storage key so the
+// old saved preference doesn't double-flip.
+const flipSign = () => ($('flip').checked ? 1 : -1);
+try { $('flip').checked = localStorage.getItem('sh_flip2') === '1'; } catch (e) {}
+$('flip').addEventListener('change', () => { try { localStorage.setItem('sh_flip2', $('flip').checked ? '1' : '0'); } catch (e) {} });
 
 function popMsg(txt, cls) {
   const p = $('pop');
@@ -454,8 +476,8 @@ function endRound() {
   $('again').textContent = `Next round (${Math.round(next / 60)} min) ▶`;
   $('end').classList.remove('hidden');
 }
-$('demoBtn').addEventListener('click', async () => { await askMotion(); G.roundIdx = 0; startRound(demo); });
-$('liveBtn').addEventListener('click', async () => { await askMotion(); G.roundIdx = 0; startRound(live); });
+$('demoBtn').addEventListener('click', async () => { goFullscreen(); await askMotion(); G.roundIdx = 0; startRound(demo); });
+$('liveBtn').addEventListener('click', async () => { goFullscreen(); await askMotion(); G.roundIdx = 0; startRound(live); });
 $('again').addEventListener('click', () => { G.roundIdx = Math.min(G.roundIdx + 1, ROUNDS.length - 1); startRound(G.provider); });
 $('menuBtn').addEventListener('click', () => { G.state = 'menu'; $('end').classList.add('hidden'); $('menu').classList.remove('hidden'); });
 $('quit').addEventListener('click', () => {
