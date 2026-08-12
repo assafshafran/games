@@ -13,11 +13,15 @@
     -webkit-user-select: none; user-select: none;
     position: fixed; inset: 0;
   }
-  #cv { position: fixed; inset: 0; display: block; }
+  /* The stage always composes the game in landscape; when the viewport is
+     portrait (rotation lock, or iOS re-rotating mid-steer) the stage rotates
+     itself 90° so the game stays landscape regardless of what the OS does. */
+  #stage { position: fixed; top: 0; left: 0; transform-origin: 0 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .hidden { display: none !important; }
 
   #menu {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
+    position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 14px;
     padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
     background: radial-gradient(ellipse at 50% 30%, #16233b 0%, #0d1117 70%);
@@ -36,8 +40,8 @@
   #menu label { color: #8b949e; font-size: 14px; }
   #menu .hint { color: #8b949e; font-size: 13px; max-width: 420px; line-height: 1.45; }
 
-  #hud { position: fixed; inset: 0; pointer-events: none; }
-  #hud > * { position: fixed; }
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  #hud > * { position: absolute; }
   #score {
     top: calc(8px + env(safe-area-inset-top)); left: 14px;
     font-size: 24px; font-weight: 800; color: #e6edf3;
@@ -79,7 +83,7 @@
   #quit { top: calc(46px + env(safe-area-inset-top)); right: 12px; }
 
   #end {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
+    position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
     background: rgba(13,17,23,.92); text-align: center; padding: 24px;
   }
@@ -92,12 +96,13 @@
   #again { background: #238636; }
   #menuBtn { background: #21262d; border: 1px solid #30363d !important; }
   #toast {
-    position: fixed; bottom: calc(56px + env(safe-area-inset-bottom)); left: 0; right: 0;
+    position: absolute; bottom: calc(56px + env(safe-area-inset-bottom)); left: 0; right: 0;
     text-align: center; color: #8b949e; font-size: 13px; pointer-events: none;
   }
 </style>
 </head>
 <body>
+<div id="stage">
 <canvas id="cv"></canvas>
 
 <div id="menu">
@@ -127,12 +132,14 @@
 </div>
 
 <div id="toast"></div>
+</div>
 
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap180 = d => { d = d % 360; if (d > 180) d -= 360; if (d < -180) d += 360; return d; };
+const wrapPI = r => { while (r > Math.PI) r -= 2 * Math.PI; while (r < -Math.PI) r += 2 * Math.PI; return r; };
 
 // Set after the axis-finder (steering-prototype.html) validation run tells us
 // which rotationRate axis carries the car's yaw. 'alpha'|'beta'|'gamma'.
@@ -141,17 +148,25 @@ const STEER_GAIN = 4.5;   // deg of wheel per deg/s of yaw
 const WHEEL_ROT = 2;      // visual wheel rotation per deg of input
 const DS = 4;             // road sample spacing, meters
 
-const cv = $('cv'), ctx = cv.getContext('2d');
-let W = 0, H = 0, DPR = 1;
+const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
+let W = 0, H = 0, DPR = 1, rotated = false;
 function resize() {
   DPR = Math.min(2, window.devicePixelRatio || 1);
-  W = window.innerWidth; H = window.innerHeight;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  rotated = vh > vw; // portrait viewport: rotate the whole stage into landscape
+  W = rotated ? vh : vw; H = rotated ? vw : vh;
+  stage.style.width = W + 'px'; stage.style.height = H + 'px';
+  stage.style.transform = rotated ? 'rotate(90deg) translateY(-100%)' : '';
   cv.width = W * DPR; cv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+// stage coords for pointer events (inverse of the stage rotation)
+function ptr(e) {
+  return rotated ? { x: e.clientY, y: H - e.clientX } : { x: e.clientX, y: e.clientY };
+}
 
 let toastT = null;
 function toast(msg) {
@@ -175,7 +190,7 @@ function buildDemoRoad(total) {
     else straight(50 + Math.random() * 90);
     const sign = Math.random() < 0.5 ? 1 : -1;
     if (Math.random() < 0.6) junctions.push(mkJ(sign));
-    const R = 28 + Math.random() * 18, ang = (70 + Math.random() * 40) * Math.PI / 180;
+    const R = 40 + Math.random() * 30, ang = (60 + Math.random() * 30) * Math.PI / 180;
     arc(R, R * ang, sign);
   }
   return { pts, junctions, length: s };
@@ -199,12 +214,16 @@ const demo = {
     if (this.s > this.road.length - 80) this.s = 0;
     const car = roadSample(this.road, this.s);
     const yawDeg = car.c * this.speed * 180 / Math.PI;
+    // camera looks into the upcoming curve so the ribbon stays on screen
+    const p45 = roadSample(this.road, this.s + 45);
+    const bear = Math.atan2(p45.x - car.x, p45.y - car.y);
+    const cam = { x: car.x, y: car.y, h: car.h + 0.55 * wrapPI(bear - car.h) };
     const rib = [];
-    for (let d = -6; d < 240; d += DS) rib.push(rel(car, roadSample(this.road, this.s + d)));
+    for (let d = -6; d < 170; d += DS) rib.push(rel(cam, roadSample(this.road, this.s + d)));
     const juncs = [];
     for (const j of this.road.junctions) {
       const dd = j.s - this.s;
-      if (dd > -12 && dd < 240) juncs.push({ j, dist: dd, rel: rel(car, roadSample(this.road, j.s)) });
+      if (dd > -12 && dd < 170) juncs.push({ j, dist: dd, rel: rel(cam, roadSample(this.road, j.s)) });
     }
     return { yawDeg, rib, juncs };
   }
@@ -317,9 +336,19 @@ const live = {
     if (this.ways) {
       const path = this.buildRib(car);
       if (path) {
-        rib = path.map(p => rel(car, p));
+        // look-ahead camera: aim at the path point ~45m along
+        let cam = car, acc = 0;
+        for (let i = 1; i < path.length; i++) {
+          acc += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+          if (acc >= 45) {
+            const bear = Math.atan2(path[i].x - car.x, path[i].y - car.y);
+            cam = { x: car.x, y: car.y, h: car.h + 0.55 * wrapPI(bear - car.h) };
+            break;
+          }
+        }
+        rib = path.map(p => rel(cam, p));
         juncs = this.branches
-          .map(b => ({ j: null, dist: 0, rel: rel(car, b) }))
+          .map(b => ({ j: null, dist: 0, rel: rel(cam, b) }))
           .filter(q => q.rel.fwd > 3 && q.rel.fwd < 240);
       }
     }
@@ -343,6 +372,8 @@ window.addEventListener('devicemotion', e => {
   if (e.accelerationIncludingGravity) { motionGrav = e.accelerationIncludingGravity; motionSeen = true; }
   if (e.rotationRate) motionRot = e.rotationRate;
 });
+// if the OS flips orientation mid-steer, the tilt reference jumps — recalibrate
+window.addEventListener('orientationchange', () => { G.baseline = null; G.baseSamples = []; });
 function rawTilt() {
   if (!motionGrav) return null;
   const a = (((screen.orientation && screen.orientation.angle) || window.orientation || 0)) * Math.PI / 180;
@@ -363,10 +394,11 @@ async function askMotion() {
 
 let drag = null;
 cv.addEventListener('pointerdown', e => {
-  if (e.clientY > H * 0.45) { drag = { x0: e.clientX, base: G.wheel }; cv.setPointerCapture(e.pointerId); }
+  const p = ptr(e);
+  if (p.y > H * 0.45) { drag = { x0: p.x, base: G.wheel }; cv.setPointerCapture(e.pointerId); }
 });
 cv.addEventListener('pointermove', e => {
-  if (drag) G.wheelRaw = clamp(drag.base + (e.clientX - drag.x0) * 0.45, -90, 90);
+  if (drag) G.wheelRaw = clamp(drag.base + (ptr(e).x - drag.x0) * 0.45, -90, 90);
 });
 cv.addEventListener('pointerup', () => { drag = null; });
 cv.addEventListener('pointercancel', () => { drag = null; });
