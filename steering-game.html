@@ -147,9 +147,13 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrap180 = d => { d = d % 360; if (d > 180) d -= 360; if (d < -180) d += 360; return d; };
 const wrapPI = r => { while (r > Math.PI) r -= 2 * Math.PI; while (r < -Math.PI) r += 2 * Math.PI; return r; };
 
-// Set after the axis-finder (steering-prototype.html) validation run tells us
-// which rotationRate axis carries the car's yaw. 'alpha'|'beta'|'gamma'.
+// Calibrated from Assaf's 2026-08-13 test drive (steering-log CSV, 5 marked
+// turns, landscape grip): alpha carries car yaw at 9x the quiet-driving noise
+// floor; beta/gamma are crosstalk only. Sign follows W3C rotationRate
+// (positive alpha = left turn with screen up-ish); the game wants positive =
+// right turn, hence -1.
 const LIVE_YAW_AXIS = 'alpha';
+const LIVE_YAW_SIGN = -1;
 const STEER_GAIN = 4.5;   // deg of wheel per deg/s of yaw
 const WHEEL_ROT = 2;      // visual wheel rotation per deg of input
 const DS = 4;             // road sample spacing, meters
@@ -334,7 +338,7 @@ const live = {
       this.disp.x += (this.pos.x - this.disp.x) * k;
       this.disp.y += (this.pos.y - this.disp.y) * k;
     }
-    const rr = (motionRot && typeof motionRot[LIVE_YAW_AXIS] === 'number') ? motionRot[LIVE_YAW_AXIS] : 0;
+    const rr = LIVE_YAW_SIGN * ((motionRot && typeof motionRot[LIVE_YAW_AXIS] === 'number') ? motionRot[LIVE_YAW_AXIS] : 0);
     this.yawLP += (rr - this.yawLP) * Math.min(1, dt * 1.2); // ~0.2 Hz low-pass: the "car" component
     const yawDeg = this.yawLP;
     const car = { x: this.disp ? this.disp.x : 0, y: this.disp ? this.disp.y : 0, h: this.head };
