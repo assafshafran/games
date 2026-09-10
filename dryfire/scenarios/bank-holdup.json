@@ -1,0 +1,77 @@
+{
+  "id": "bank_holdup",
+  "name": "Bank Holdup",
+  "description": "A branching video scenario. Two people at the counter, one of them armed. Identify, engage, and do not hit the wrong one.",
+  "difficulty": "hard",
+  "tags": ["branching", "video", "no-shoot"],
+  "start": "approach",
+  "stages": {
+    "approach": {
+      "video": { "src": "clips/approach.mp4", "loop": false },
+      "caption": "Reported robbery in progress.",
+      "duration": 4000,
+      "actors": [],
+      "transitions": [{ "on": "timeout", "goto": "contact" }]
+    },
+
+    "contact": {
+      "video": { "src": "clips/contact.mp4", "loop": true },
+      "duration": 6500,
+      "actors": [
+        {
+          "id": "suspect",
+          "type": "video_region",
+          "label": "armed suspect",
+          "fireAt": 6000,
+          "track": [
+            { "t": 0,    "x": 0.62, "y": 0.90, "scale": 0.52 },
+            { "t": 1500, "x": 0.59, "y": 0.90, "scale": 0.54 },
+            { "t": 3500, "x": 0.66, "y": 0.91, "scale": 0.56 },
+            { "t": 6500, "x": 0.64, "y": 0.91, "scale": 0.56 }
+          ]
+        },
+        {
+          "id": "teller",
+          "type": "video_noshoot",
+          "label": "bank teller",
+          "z": 20,
+          "track": [
+            { "t": 0,    "x": 0.38, "y": 0.92, "scale": 0.50 },
+            { "t": 2000, "x": 0.36, "y": 0.92, "scale": 0.50 },
+            { "t": 6500, "x": 0.40, "y": 0.92, "scale": 0.51 }
+          ]
+        }
+      ],
+      "transitions": [
+        { "on": "hit", "actor": "suspect", "goto": "suspect_down" },
+        { "on": "noshootHit", "goto": "teller_hit" },
+        { "on": "threatFired", "goto": "suspect_fired" },
+        { "on": "timeout", "goto": "suspect_fired" }
+      ]
+    },
+
+    "suspect_down": {
+      "video": { "src": "clips/suspect_down.mp4", "loop": false },
+      "caption": "Suspect down.",
+      "duration": 3000,
+      "actors": [],
+      "transitions": [{ "on": "timeout", "outcome": "win", "reason": "suspect stopped, teller unharmed" }]
+    },
+
+    "teller_hit": {
+      "video": { "src": "clips/teller_hit.mp4", "loop": false },
+      "caption": "You hit the teller.",
+      "duration": 3000,
+      "actors": [],
+      "transitions": [{ "on": "timeout", "outcome": "lose", "reason": "you hit the teller" }]
+    },
+
+    "suspect_fired": {
+      "video": { "src": "clips/suspect_fired.mp4", "loop": false },
+      "caption": "The suspect fired first.",
+      "duration": 3000,
+      "actors": [],
+      "transitions": [{ "on": "timeout", "outcome": "lose", "reason": "the suspect fired first" }]
+    }
+  }
+}

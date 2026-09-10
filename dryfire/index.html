@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dryfire Range — Console</title>
+<link rel="stylesheet" href="css/console.css">
+</head>
+<body>
+
+<header>
+  <h1>Dryfire Range</h1>
+  <div class="spacer"></div>
+  <span id="arenaStatus" class="pill bad">arena not open</span>
+  <button id="openArena" class="primary">Open arena window</button>
+</header>
+
+<main>
+  <section class="col">
+
+    <div class="panel">
+      <h2>1 &middot; Camera</h2>
+      <div class="row">
+        <select id="deviceSelect"><option>Grant camera access to list devices</option></select>
+        <button id="cameraToggle" class="primary">Start</button>
+      </div>
+      <div class="previewWrap">
+        <canvas id="preview"></canvas>
+        <div id="previewHint" class="hint">Camera off</div>
+      </div>
+      <div class="row wrap small muted">
+        <span id="camInfo">no signal</span>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" id="showMask"> Show what the detector sees</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>2 &middot; Calibration</h2>
+      <p class="muted small">Point the camera at the whole projected image, dim the room, then calibrate. The arena flashes black and white so the projection can be told apart from everything else in the room.</p>
+      <div class="row wrap">
+        <button id="autoCal" class="primary">Auto calibrate</button>
+        <button id="manualCal">Set corners by hand</button>
+        <button id="verifyCal">Verify</button>
+        <button id="clearCal" class="danger">Clear</button>
+      </div>
+      <div id="calStatus" class="status">Not calibrated.</div>
+    </div>
+
+    <div class="panel">
+      <h2>3 &middot; Detection</h2>
+      <div class="slider">
+        <label>Brightness floor <output id="outValue"></output></label>
+        <input type="range" id="minValue" min="120" max="255" step="1">
+        <p class="muted tiny">Raise until the projected image stops registering. Lower if faint hits are missed.</p>
+      </div>
+      <div class="slider">
+        <label>Rise over last frame <output id="outRise"></output></label>
+        <input type="range" id="minRise" min="10" max="150" step="1">
+        <p class="muted tiny">How much brighter a pixel must suddenly get. Raise it if changing scenes trigger shots.</p>
+      </div>
+      <div class="slider">
+        <label>Largest blob accepted <output id="outMax"></output> px</label>
+        <input type="range" id="maxPixels" min="50" max="4000" step="25">
+        <p class="muted tiny">This is what separates a laser dot from the projector. Keep it well under the size of any bright patch on screen.</p>
+      </div>
+      <div class="row small muted"><span id="detStats">idle</span></div>
+    </div>
+
+  </section>
+
+  <section class="col">
+
+    <div class="panel">
+      <h2>4 &middot; Scenario</h2>
+      <div id="scenarioList" class="scenarios"></div>
+      <div class="row wrap">
+        <button id="startRun" class="primary" disabled>Start</button>
+        <button id="stopRun" disabled>Stop</button>
+        <label class="check"><input type="checkbox" id="mouseShots"> Click the arena to shoot (rehearsal)</label>
+      </div>
+      <div class="row wrap small muted">
+        <label class="check">Custom scenario
+          <input type="file" id="scenarioFile" accept=".json,application/json">
+        </label>
+      </div>
+      <div class="row wrap small muted">
+        <label class="check">Start delay
+          <select id="startDelay">
+            <option value="0">none</option>
+            <option value="3000" selected>3s</option>
+            <option value="random">random 2-6s</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Live</h2>
+      <div class="stats">
+        <div class="stat"><span class="label">Score</span><span class="val" id="liveScore">—</span></div>
+        <div class="stat"><span class="label">Shots</span><span class="val" id="liveShots">—</span></div>
+        <div class="stat"><span class="label">Hits</span><span class="val" id="liveHits">—</span></div>
+        <div class="stat"><span class="label">No-shoot</span><span class="val bad" id="liveNoShoot">—</span></div>
+      </div>
+      <div id="liveStage" class="status">No run in progress.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Shot log</h2>
+      <div class="tableWrap">
+        <table id="shotLog">
+          <thead><tr><th>#</th><th>Time</th><th>Split</th><th>Target</th><th>Zone</th><th>Score</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row"><button id="exportLog">Export session as JSON</button></div>
+    </div>
+
+  </section>
+</main>
+
+<script type="module" src="js/console.js"></script>
+</body>
+</html>
