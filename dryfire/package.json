@@ -1,0 +1,16 @@
+{
+  "name": "dryfire-range",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Projector and laser dry fire training simulator with branching scenarios",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "test": "node test/logic.mjs && node test/browser.mjs",
+    "test:logic": "node test/logic.mjs",
+    "test:browser": "node test/browser.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}
