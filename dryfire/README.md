@@ -152,10 +152,17 @@ npm install && node test/browser.mjs   # 47 checks in real Chromium
 ```
 
 The logic tests cover the geometry, the detector, calibration against synthetic
-camera frames including a dim projection and a rounded blob, and every scenario
-at 200 seeds each. The browser tests cover module loading, the two windows
-finding each other, canvas rendering, manual corner dragging, and the camera
-path using Chromium's fake capture device.
+camera frames including a dim projection and a rounded blob, the hit-marker
+feedback loop, drill scoring and sequencing, and every scenario at 200 seeds
+each. The browser tests cover module loading, the two windows finding each
+other, canvas rendering, arena brightness headroom, a scored hit reaching the
+console mid-run, manual corner dragging, the camera path using Chromium's fake
+capture device, and the `file://` guard.
+
+Two of them are built so that passing means something. The feedback loop test
+runs a control with suppression disabled, which turns one shot into more than
+twenty. The calibration shape test asserts a circle scores pi/2, which is the
+analytic answer rather than a number read back off the implementation.
 
 ## How it is put together
 
