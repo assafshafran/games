@@ -11,7 +11,9 @@ import { ShotDetector } from '../js/detect.js';
 import { pointInPolygon } from '../js/geometry.js';
 import { ScenarioEngine, validateScenario } from '../js/scenario.js';
 import { buildScenario, listScenarios } from '../js/library.js';
-import { findProjectedQuad } from '../js/calibrate.js';
+import {
+  findProjectedQuad, quadFromDifference, peakDifference, accumulateMax, otsuThreshold,
+} from '../js/calibrate.js';
 import { readFile } from 'node:fs/promises';
 
 let pass = 0;
@@ -176,6 +178,134 @@ function testCalibration() {
     Math.hypot(roundTrip.x - target.x, roundTrip.y - target.y) < 1e-6, JSON.stringify(roundTrip));
 
   ok('reports a dim projection instead of guessing', !!findProjectedQuad(dark, dark, w, h).error);
+  ok('always reports diagnostics, even on failure',
+    typeof findProjectedQuad(dark, dark, w, h).diagnostics?.threshold === 'number');
+}
+
+// The shape test. The four extreme points of a convex region lie inside it, so
+// the quad fitted to them never exceeds the region's area: a true rectangle
+// scores almost exactly 1, and a rounded blob scores far more. This is what
+// stops a stray connected bright area from being accepted as the screen.
+function testShapeRejection() {
+  console.log('calibration: rectangle versus blob');
+
+  const w = 320;
+  const h = 240;
+  const lit = (poly, on) => {
+    const a = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) << 2;
+        const v = on && pointInPolygon(x, y, poly) ? 230 : 20;
+        a[o] = v; a[o + 1] = v; a[o + 2] = v; a[o + 3] = 255;
+      }
+    }
+    return a;
+  };
+  const judge = (poly) => quadFromDifference(peakDifference(lit(poly, true), lit(poly, false), w, h), w, h);
+
+  const rectangle = judge([{ x: 38, y: 26 }, { x: 283, y: 52 }, { x: 262, y: 196 }, { x: 57, y: 172 }]);
+  ok('an oblique rectangle is accepted', !rectangle.error, rectangle.error ?? '');
+  ok('and scores close to 1', Math.abs(rectangle.diagnostics.fill - 1) < 0.05,
+    rectangle.diagnostics.fill.toFixed(3));
+
+  // A circle's inscribed square has 2r^2 of its pi*r^2, so the ratio is pi/2.
+  const circle = judge([...Array(48)].map((_, i) => ({
+    x: 160 + 90 * Math.cos((i / 48) * Math.PI * 2),
+    y: 120 + 90 * Math.sin((i / 48) * Math.PI * 2),
+  })));
+  ok('a round blob is rejected', /rounded rather than rectangular/.test(circle.error ?? ''), circle.error ?? 'accepted');
+  ok('and scores pi/2 as the geometry predicts',
+    Math.abs(circle.diagnostics.fill - Math.PI / 2) < 0.03, circle.diagnostics.fill.toFixed(3));
+}
+
+// A dim projector, or a camera that stopped its exposure down when the arena
+// flashed white, leaves a much smaller difference. The threshold is chosen
+// from the data for exactly this case: a fixed one tuned for a bright room
+// rejects the projection outright.
+function testDimProjection() {
+  console.log('calibration: a dim projection');
+
+  const w = 320;
+  const h = 240;
+  const truth = [{ x: 38, y: 26 }, { x: 283, y: 52 }, { x: 262, y: 196 }, { x: 57, y: 172 }];
+
+  // Deterministic sensor noise, so the threshold has to be found rather than
+  // read off two clean spikes. This is what Otsu is actually for.
+  let seed = 12345;
+  const noise = (amount) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return ((seed % 1000) / 1000 - 0.5) * 2 * amount;
+  };
+
+  const scene = (lit, lift) => {
+    const a = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) << 2;
+        const v = 60 + noise(8) + (lit && pointInPolygon(x, y, truth) ? lift : 0);
+        a[o] = v; a[o + 1] = v; a[o + 2] = v; a[o + 3] = 255;
+      }
+    }
+    return a;
+  };
+
+  // A 40-level lift buried in +/-8 noise: well under the fixed 45 the old code
+  // used, and close enough to the noise floor that the threshold matters.
+  const dim = peakDifference(scene(true, 40), scene(false, 0), w, h);
+
+  ok('a fixed 45 threshold would have missed it', !!quadFromDifference(dim, w, h, { threshold: 45 }).error);
+
+  const res = quadFromDifference(dim, w, h);
+  ok('the adaptive threshold finds it', !res.error, res.error ?? '');
+  if (!res.error) {
+    const err = res.corners.map((c, i) => Math.hypot(c.x - truth[i].x, c.y - truth[i].y));
+    ok('corners still within 4px', Math.max(...err) < 4, err.map((e) => e.toFixed(1)).join(','));
+    ok('the threshold lands between the noise floor and the signal',
+      res.diagnostics.threshold > 16 && res.diagnostics.threshold < 40, String(res.diagnostics.threshold));
+  }
+
+  // Otsu on a clean two-group histogram splits between the groups.
+  const bimodal = new Uint8ClampedArray(1000);
+  for (let i = 0; i < 400; i++) bimodal[i] = 200;
+  const t = otsuThreshold(bimodal);
+  ok('otsu splits two groups', t > 0 && t <= 200, String(t));
+
+  // Combining cycles keeps the best result at every pixel, so one good flash
+  // carries the calibration even if the others were washed out.
+  const weak = new Uint8ClampedArray([10, 80, 5, 0]);
+  const strong = new Uint8ClampedArray([90, 20, 5, 1]);
+  const merged = accumulateMax(weak, strong);
+  ok('accumulating cycles keeps the per-pixel maximum',
+    [...merged].join(',') === '90,80,5,1', [...merged].join(','));
+
+  // A frame pair with nothing in it must say the flash was not seen, rather
+  // than inventing a threshold out of sensor noise.
+  // Noise alone reaches the threshold on scattered pixels, so coverage cannot
+  // rule it out. Coherence can: noise makes no connected area.
+  const flat = peakDifference(scene(false, 0), scene(false, 0), w, h);
+  const none = quadFromDifference(flat, w, h);
+  ok('noise is diagnosed as a missed flash, not a small projection',
+    /did not see the arena flash/.test(none.error ?? ''), none.error ?? 'no error');
+  ok('noise scores near-zero coherence', none.diagnostics.coherence < 0.35, String(none.diagnostics.coherence));
+  ok('a real projection scores high coherence', res.diagnostics.coherence > 0.9, String(res.diagnostics.coherence));
+
+  // A real but tiny projection gets different advice from noise.
+  const tiny = [{ x: 150, y: 110 }, { x: 175, y: 110 }, { x: 175, y: 130 }, { x: 150, y: 130 }];
+  const tinyScene = (lit) => {
+    const a = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) << 2;
+        const v = 40 + (lit && pointInPolygon(x, y, tiny) ? 150 : 0);
+        a[o] = v; a[o + 1] = v; a[o + 2] = v; a[o + 3] = 255;
+      }
+    }
+    return a;
+  };
+  const small = quadFromDifference(peakDifference(tinyScene(true), tinyScene(false), w, h), w, h);
+  ok('a tiny but real projection is told it is too small',
+    /too small to calibrate/.test(small.error ?? ''), small.error ?? 'no error');
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +500,8 @@ await testShippedScenarios();
 testHomography();
 testDetector();
 testCalibration();
+testShapeRejection();
+testDimProjection();
 testHostageRescue();
 testDrills();
 testLibrary();

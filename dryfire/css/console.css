@@ -88,3 +88,19 @@ td { padding: 6px 9px; border-bottom: 1px solid #21262d; font-variant-numeric: t
 tr:last-child td { border-bottom: none; }
 td.pos { color: #7ee787; } td.neg { color: #ff7b72; } td.zero { color: #8b949e; }
 .empty { padding: 16px; text-align: center; color: #8b949e; font-size: 12px; }
+
+/* Calibration diagnostics: the two captured frames and the difference. */
+.hidden { display: none !important; }
+.calDiag { margin-top: 10px; }
+.diagRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.diagRow figure { margin: 0; }
+.diagRow canvas {
+  display: block; width: 100%; height: auto;
+  background: #010409; border: 1px solid #30363d; border-radius: 7px;
+}
+.diagRow figcaption { font-size: 10px; color: #8b949e; text-align: center; margin-top: 4px; }
+.diagStats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 9px; font-size: 11px; color: #8b949e; }
+.diagStats b { color: #c9d1d9; font-variant-numeric: tabular-nums; }
+
+/* Manual corner picking: corners stay draggable after they are placed. */
+#preview.dragging { cursor: grabbing; }

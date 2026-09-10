@@ -7,7 +7,7 @@
 
 import { Bus } from './bus.js';
 import { ShotDetector, DEFAULT_PARAMS } from './detect.js';
-import { findProjectedQuad } from './calibrate.js';
+import { peakDifference, accumulateMax, quadFromDifference, meanPeak } from './calibrate.js';
 import { homographyFromQuads, applyHomography, orderCorners } from './homography.js';
 import { listScenarios } from './library.js';
 import { validateScenario } from './scenario.js';
@@ -35,6 +35,7 @@ const app = {
   corners: null,
   mode: 'idle',      // idle | calibrating | picking
   picks: [],
+  dragIndex: -1,
   frozen: null,
   scenario: null,
   custom: null,
@@ -178,7 +179,12 @@ function onShot(shot) {
   if (app.recentShots.length > 12) app.recentShots.shift();
 
   if (!app.homography) {
-    setCalStatus('Laser seen, but the arena is not calibrated yet, so the shot cannot be placed.', 'bad');
+    // Deliberately not the calibration status line: a stray detection landing
+    // there would wipe out the calibration result or error the operator is in
+    // the middle of reading.
+    const note = $('detNote');
+    note.textContent = 'A laser is being detected, but the arena is not calibrated, so shots cannot be placed on it.';
+    note.classList.remove('hidden');
     return;
   }
   const arena = applyHomography(app.homography, shot.x, shot.y);
@@ -225,12 +231,20 @@ function drawPreview(frame) {
     });
   }
 
-  app.picks.forEach((p, i) => {
-    g.fillStyle = '#f0883e';
-    g.beginPath(); g.arc(p.x, p.y, 5, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 10px system-ui';
-    g.fillText(String(i + 1), p.x - 3, p.y - 8);
-  });
+  if (app.picks.length === 4) {
+    g.strokeStyle = 'rgba(240,136,62,0.9)';
+    g.lineWidth = 2;
+    g.beginPath();
+    app.picks.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+    g.closePath();
+    g.stroke();
+
+    app.picks.forEach((p, i) => {
+      g.fillStyle = i === app.dragIndex ? '#ffd7a8' : '#f0883e';
+      g.beginPath(); g.arc(p.x, p.y, 8, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#0d1117'; g.lineWidth = 2; g.stroke();
+    });
+  }
 
   const now = performance.now();
   app.recentShots = app.recentShots.filter((s) => now - s.t < 1200);
@@ -246,37 +260,73 @@ function drawPreview(frame) {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Settle delays for the flash cycles, in milliseconds.
+//
+// One delay cannot suit every room. A webcam shown a white screen stops down
+// within about a second, so a short delay catches the flash before
+// auto-exposure erases it; a projector with input lag needs a longer one. The
+// cycles run at all three and the per-pixel maximum is kept, so the result
+// only needs one of them to have worked.
+const SETTLE_DELAYS = [250, 500, 900];
+
 async function autoCalibrate() {
   if (!app.stream) { setCalStatus('Start the camera first.', 'bad'); return; }
   if (!app.arenaOpen) { setCalStatus('Open the arena window first.', 'bad'); return; }
 
   app.mode = 'calibrating';
   app.picks = [];
-  setCalStatus('Calibrating: hold still...');
 
   try {
-    // A settle delay each way: projectors and camera auto-exposure both take
-    // a moment, and sampling too early captures the transition, not the state.
-    bus.send('calibrate:show', { fill: '#000000' });
-    await wait(900);
-    const dark = grabFrame();
+    const w = app.proc.width;
+    const h = app.proc.height;
+    const diff = new Uint8ClampedArray(w * h);
+    let dark = null;
+    let lit = null;
+    let meanDark = 0;
+    let meanLit = 0;
 
-    bus.send('calibrate:show', { fill: '#ffffff' });
-    await wait(900);
-    const lit = grabFrame();
+    for (let cycle = 0; cycle < SETTLE_DELAYS.length; cycle++) {
+      const delay = SETTLE_DELAYS[cycle];
+      setCalStatus(`Calibrating, pass ${cycle + 1} of ${SETTLE_DELAYS.length}. Hold still and keep out of the camera's view.`);
 
-    if (!dark || !lit) { setCalStatus('Lost the camera during calibration.', 'bad'); return; }
+      bus.send('calibrate:show', { fill: '#000000' });
+      await wait(delay);
+      const d = grabFrame();
 
-    const res = findProjectedQuad(lit.data, dark.data, app.proc.width, app.proc.height);
-    if (res.error) { setCalStatus(res.error, 'bad'); return; }
+      bus.send('calibrate:show', { fill: '#ffffff' });
+      await wait(delay);
+      const l = grabFrame();
 
-    const h = homographyFromQuads(res.corners, ARENA_QUAD);
-    if (!h) { setCalStatus('Found corners but they do not form a usable quadrilateral. Set the corners by hand instead.', 'bad'); return; }
+      if (!d || !l) { setCalStatus('Lost the camera during calibration.', 'bad'); return; }
+
+      accumulateMax(diff, peakDifference(l.data, d.data, w, h));
+
+      // Keep the brightest pair seen for the diagnostics view, since that is
+      // the one an operator can most usefully look at.
+      const md = meanPeak(d.data, w, h);
+      const ml = meanPeak(l.data, w, h);
+      if (!lit || ml - md > meanLit - meanDark) { dark = d; lit = l; meanDark = md; meanLit = ml; }
+    }
+
+    const res = quadFromDifference(diff, w, h);
+    showDiagnostics({ dark, lit, diff, meanDark, meanLit, res });
+
+    if (res.error) {
+      setCalStatus(res.error, 'bad');
+      return;
+    }
+
+    const homography = homographyFromQuads(res.corners, ARENA_QUAD);
+    if (!homography) {
+      setCalStatus('Found four corners but they do not form a usable quadrilateral. Set the corners by hand instead.', 'bad');
+      return;
+    }
 
     app.corners = res.corners;
-    app.homography = h;
+    app.homography = homography;
     saveCalibration();
-    setCalStatus(`Calibrated. The projection fills ${(res.coverage * 100).toFixed(0)}% of the camera view. Use Verify to confirm.`, 'good');
+    $('detNote').classList.add('hidden');
+    setCalStatus(`Calibrated. The projection fills ${(res.diagnostics.regionFraction * 100).toFixed(0)}% of the camera view. Use Verify to confirm.`, 'good');
   } finally {
     app.mode = 'idle';
     app.detector?.reset();
@@ -284,46 +334,173 @@ async function autoCalibrate() {
   }
 }
 
-function startManual() {
-  if (!app.stream) { setCalStatus('Start the camera first.', 'bad'); return; }
-  bus.send('calibrate:show', { fill: '#ffffff' });
-  app.frozen = grabFrame();
-  app.picks = [];
-  app.mode = 'picking';
-  $('preview').classList.add('picking');
-  setCalStatus('Click the four corners of the projected image: top-left, top-right, bottom-right, bottom-left.');
-}
+// Show what the camera saw during calibration: the two frames and the
+// difference between them. On a failure this is the difference between "it
+// did not work" and knowing which of the room, the camera or the projector is
+// at fault.
+function showDiagnostics({ dark, lit, diff, meanDark, meanLit, res }) {
+  const wrap = $('calDiag');
+  wrap.classList.remove('hidden');
 
-function onPick(ev) {
-  if (app.mode !== 'picking') return;
-  const c = $('preview');
-  const r = c.getBoundingClientRect();
-  app.picks.push({
-    x: ((ev.clientX - r.left) / r.width) * c.width,
-    y: ((ev.clientY - r.top) / r.height) * c.height,
-  });
+  const w = app.proc.width;
+  const h = app.proc.height;
+  const paint = (id, imageData) => {
+    const c = $(id);
+    c.width = w; c.height = h;
+    c.getContext('2d').putImageData(imageData, 0, 0);
+  };
+  if (dark) paint('diagDark', dark);
+  if (lit) paint('diagLit', lit);
 
-  if (app.picks.length < 4) {
-    setCalStatus(`${4 - app.picks.length} corner${app.picks.length === 3 ? '' : 's'} to go.`);
-    return;
+  // The difference, with everything above the chosen threshold tinted so the
+  // detected area is obvious, and the fitted quad drawn on top.
+  const c = $('diagDiff');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const img = g.createImageData(w, h);
+  const threshold = res.diagnostics.threshold;
+  for (let i = 0; i < diff.length; i++) {
+    const v = diff[i];
+    const o = i << 2;
+    if (v >= threshold) { img.data[o] = 255; img.data[o + 1] = 60; img.data[o + 2] = 200; }
+    else { img.data[o] = v; img.data[o + 1] = v; img.data[o + 2] = v; }
+    img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+
+  if (res.corners) {
+    g.strokeStyle = '#58a6ff';
+    g.lineWidth = 2;
+    g.beginPath();
+    res.corners.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+    g.closePath();
+    g.stroke();
   }
 
-  // Accept the clicks in any order rather than insisting the operator got the
-  // sequence right while looking at a projector across the room.
+  const d = res.diagnostics;
+  const rows = [
+    ['camera saw black at', meanDark.toFixed(0)],
+    ['camera saw white at', meanLit.toFixed(0)],
+    // The single most useful number: how much brighter the camera saw the room
+    // get when the arena went white. Near zero means it is not looking at the
+    // projection, whatever else the other numbers say.
+    ['flash strength', (meanLit - meanDark).toFixed(0)],
+    ['threshold', String(d.threshold)],
+    ['changed', `${(d.coverage * 100).toFixed(1)}%`],
+    ['largest area', `${(d.regionFraction * 100).toFixed(1)}%`],
+    ['one area', `${(d.coherence * 100).toFixed(0)}%`],
+    ['rectangle fill', `${(d.fill * 100).toFixed(0)}%`],
+  ];
+  $('diagStats').innerHTML = rows
+    .map(([k, v]) => `<span>${k}: <b>${v}</b></span>`)
+    .join('');
+}
+
+// Manual corner picking.
+//
+// Four handles are placed inside the frame and dragged onto the corners of the
+// projected image. Earlier this asked for four clicks in order, which gave no
+// way to correct a corner that landed slightly off, and no way to recover from
+// clicking them in the wrong order while looking at a projector across the
+// room. Handles can be nudged until they are right.
+const HANDLE_GRAB_PX = 22;
+
+function startManual() {
+  if (!app.stream) { setCalStatus('Start the camera first.', 'bad'); return; }
+
+  // Light the arena so the operator can see what they are aiming the handles
+  // at, and freeze a frame so a moving scene does not fight the dragging.
+  bus.send('calibrate:show', { fill: '#ffffff' });
+  setTimeout(() => { app.frozen = grabFrame(); }, 320);
+
+  const w = app.proc.width;
+  const h = app.proc.height;
+  app.picks = app.corners
+    ? app.corners.map((p) => ({ ...p }))
+    : [
+      { x: w * 0.15, y: h * 0.15 },
+      { x: w * 0.85, y: h * 0.15 },
+      { x: w * 0.85, y: h * 0.85 },
+      { x: w * 0.15, y: h * 0.85 },
+    ];
+
+  app.mode = 'picking';
+  app.dragIndex = -1;
+  $('preview').classList.add('picking');
+  $('confirmCorners').classList.remove('hidden');
+  setCalStatus('Drag each handle onto a corner of the projected image, then press "Use these corners".');
+}
+
+// Where a pointer event lands in processing-canvas coordinates.
+function eventToCanvas(ev) {
+  const c = $('preview');
+  const r = c.getBoundingClientRect();
+  return {
+    x: ((ev.clientX - r.left) / r.width) * c.width,
+    y: ((ev.clientY - r.top) / r.height) * c.height,
+  };
+}
+
+function onPointerDown(ev) {
+  if (app.mode !== 'picking') return;
+  const p = eventToCanvas(ev);
+  const scale = $('preview').width / $('preview').getBoundingClientRect().width;
+
+  let nearest = -1;
+  let best = HANDLE_GRAB_PX * scale;
+  app.picks.forEach((q, i) => {
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < best) { best = d; nearest = i; }
+  });
+
+  // Grabbing empty space moves the nearest handle there outright, so a corner
+  // far from where it should be takes one action rather than a long drag.
+  app.dragIndex = nearest >= 0 ? nearest : nearestCorner(p);
+  app.picks[app.dragIndex] = p;
+  $('preview').classList.add('dragging');
+  ev.preventDefault();
+}
+
+function nearestCorner(p) {
+  let idx = 0;
+  let best = Infinity;
+  app.picks.forEach((q, i) => {
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < best) { best = d; idx = i; }
+  });
+  return idx;
+}
+
+function onPointerMove(ev) {
+  if (app.mode !== 'picking' || app.dragIndex < 0) return;
+  app.picks[app.dragIndex] = eventToCanvas(ev);
+}
+
+function onPointerUp() {
+  app.dragIndex = -1;
+  $('preview').classList.remove('dragging');
+}
+
+function confirmCorners() {
+  if (app.mode !== 'picking') return;
+
+  // Accept the handles in whatever arrangement they ended up in: ordering them
+  // here means the operator never has to think about which corner is first.
   const ordered = orderCorners(app.picks);
-  const h = ordered && homographyFromQuads(ordered, ARENA_QUAD);
-  if (!h) {
-    app.picks = [];
-    setCalStatus('Those four points do not form a quadrilateral. Try again.', 'bad');
+  const homography = ordered && homographyFromQuads(ordered, ARENA_QUAD);
+  if (!homography) {
+    setCalStatus('Those four points do not form a quadrilateral. Spread the handles out to the corners of the projection.', 'bad');
     return;
   }
 
   app.corners = ordered;
-  app.homography = h;
+  app.homography = homography;
   app.picks = [];
   app.frozen = null;
   app.mode = 'idle';
+  $('detNote').classList.add('hidden');
   $('preview').classList.remove('picking');
+  $('confirmCorners').classList.add('hidden');
   saveCalibration();
   bus.send('idle');
   setCalStatus('Corners set by hand. Use Verify to confirm.', 'good');
@@ -507,7 +684,10 @@ bus.on('scenario:rejected', ({ problems }) => {
 $('openArena').addEventListener('click', openArena);
 $('cameraToggle').addEventListener('click', () => (app.stream ? stopCamera() : startCamera()));
 $('deviceSelect').addEventListener('change', () => { if (app.stream) { stopCamera(); startCamera(); } });
-$('preview').addEventListener('click', onPick);
+$('preview').addEventListener('pointerdown', onPointerDown);
+$('preview').addEventListener('pointermove', onPointerMove);
+window.addEventListener('pointerup', onPointerUp);
+$('confirmCorners').addEventListener('click', confirmCorners);
 $('autoCal').addEventListener('click', autoCalibrate);
 $('manualCal').addEventListener('click', startManual);
 $('verifyCal').addEventListener('click', () => bus.send('calibrate:verify'));
@@ -543,6 +723,10 @@ $('exportLog').addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', () => { app.arenaWindow?.close(); });
+
+// Exposed only so the browser tests can assert on drag state; nothing in the
+// app reads it.
+window.__dryfireDebug = app;
 
 loadStored();
 renderScenarios();

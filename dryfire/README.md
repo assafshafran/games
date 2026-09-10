@@ -69,13 +69,26 @@ the gap.
 
 **4. Start the camera**, pick your device, and check the preview.
 
-**5. Calibrate.** Press "Auto calibrate". The arena flashes black, then white,
-and the two camera frames are differenced. Everything that was already lit in
-the room cancels out, leaving exactly the area the projector covers; its four
-corners become the mapping. If the projection is partly out of frame or a
-mirror is bouncing it back, calibration says so instead of guessing. "Set
-corners by hand" is the fallback: click the four corners in the preview, in any
-order.
+**5. Calibrate.** Press "Auto calibrate". The arena flashes black then white
+three times, at different speeds, and the camera frames are differenced.
+Everything already lit in the room cancels out, leaving the area the projector
+covers; its four corners become the mapping.
+
+Three flashes rather than one because a webcam shown a white screen stops its
+exposure down within about a second, which erases the very difference the
+method depends on. The fast pass beats auto-exposure, the slow pass suits a
+projector with input lag, and only one of them has to work.
+
+Either way you get a diagnostics panel showing the two frames the camera
+captured and what changed between them. **Flash strength** is the number to
+read first: it is how much brighter the camera saw the room get. Tens of levels
+is healthy. Near zero means the camera is not looking at the projection at all,
+whatever the other numbers say.
+
+"Set corners by hand" is the fallback. Four handles appear on a frozen camera
+frame; drag each onto a corner of the projected image and press "Use these
+corners". Clicking anywhere jumps the nearest handle there, and order does not
+matter.
 
 **6. Verify.** Press "Verify" and shoot the grid intersections. Markers should
 land where you aimed. If they are consistently offset, calibrate again; if they
@@ -155,13 +168,26 @@ be wasteful, so the console sends shots and commands and gets back a summary.
 **The arena window never connects.** Pop-ups are blocked, or the two windows
 are on different origins. Both must be served from the same localhost address.
 
-**Calibration says the projection is too dim.** The camera cannot see enough of
-the lit area. Check it is aimed at the screen, turn the room lights down, and
-make sure the projected image is not clipped out of frame.
+**Calibration says the camera did not see the arena flash.** What changed
+between the two frames was scattered noise rather than a screen. Nearly always
+one of three things: the arena window is on the laptop screen instead of the
+projector, the wrong camera is selected in the dropdown, or the camera is
+pointed somewhere other than the projected image. Check flash strength in the
+diagnostics; it will be close to zero.
 
-**Calibration says the lit area is not a clean rectangle.** Something else in
-the room is changing brightness with the projector, usually a mirror, a window
-or a glossy wall. Move the camera or use the manual corner picker.
+**Calibration says the projection is too small.** It found a real lit
+rectangle, just a small one. Move the camera nearer the screen or make the
+projected image larger in frame.
+
+**Calibration says the lit area is rounded, or ragged, rather than
+rectangular.** Something else is changing brightness along with the projector,
+usually a mirror, a window or a glossy wall, or part of the screen is blocked.
+The difference image in the diagnostics shows exactly what it found. Move the
+camera, or set the corners by hand.
+
+**Auto calibration keeps failing but the projection looks fine.** Use the
+manual corner picker. It works from a single lit frame and does not depend on
+the flash at all, so it is immune to every auto-exposure problem above.
 
 **Shots register in the wrong place.** Calibration is stale because the camera
 or projector moved. Recalibrate.

@@ -180,6 +180,65 @@ try {
   ok('corner error under 3px', cal.maxCorner < 3, String(cal.maxCorner));
   ok('maps a corner back to the arena origin', cal.err < 0.01, String(cal.err));
 
+  console.log('manual corner picking');
+  {
+    await consolePage.click('#manualCal');
+    await consolePage.waitForTimeout(500);
+
+    ok('the confirm button appears',
+      await consolePage.isVisible('#confirmCorners'));
+
+    const before = await consolePage.evaluate(() => document.getElementById('calStatus').textContent);
+    ok('it explains what to drag', /Drag each handle/.test(before), before);
+
+    // Drag the top-left handle. It starts at 15% of the frame; move it toward
+    // the corner the way an operator would.
+    const box = await consolePage.$eval('#preview', (el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    await consolePage.mouse.move(box.x + box.w * 0.15, box.y + box.h * 0.15);
+    await consolePage.mouse.down();
+    await consolePage.mouse.move(box.x + box.w * 0.05, box.y + box.h * 0.06, { steps: 6 });
+    await consolePage.mouse.up();
+
+    const moved = await consolePage.evaluate(() => window.__dryfireDebug?.picks?.[0] ?? null);
+    ok('dragging moves the handle', moved !== null && moved.x < 60, JSON.stringify(moved));
+
+    await consolePage.click('#confirmCorners');
+    await consolePage.waitForTimeout(200);
+    const after = await consolePage.textContent('#calStatus');
+    ok('confirming stores a calibration', /Corners set by hand/.test(after), after);
+    ok('the confirm button goes away', !(await consolePage.isVisible('#confirmCorners')));
+
+    const stored = await consolePage.evaluate(() => localStorage.getItem('dryfire.calibration.v1'));
+    ok('the calibration is persisted', stored !== null && JSON.parse(stored).corners.length === 4);
+  }
+
+  console.log('auto calibration with nothing to see');
+  {
+    // The fake camera cannot see the arena window, so this must fail cleanly
+    // and show the operator what it did see, rather than throwing.
+    await consolePage.click('#autoCal');
+    await consolePage.waitForFunction(
+      () => !document.getElementById('calDiag').classList.contains('hidden'),
+      null, { timeout: 20000 },
+    ).then(() => ok('the diagnostics panel appears', true))
+     .catch(() => ok('the diagnostics panel appears', false));
+
+    const status = await consolePage.textContent('#calStatus');
+    ok('it says what went wrong', status.length > 40 && !/Calibrating/.test(status), status.slice(0, 80));
+
+    const stats = await consolePage.textContent('#diagStats');
+    ok('it reports what the camera saw', /flash strength/.test(stats), stats.slice(0, 90));
+
+    const painted = await consolePage.evaluate(() => {
+      const c = document.getElementById('diagDiff');
+      return c.width > 0 && c.height > 0;
+    });
+    ok('the difference image is drawn', painted);
+  }
+
   console.log('opened as a file instead of served');
   {
     // The failure mode a first-time user actually hits. Over file:// the module
