@@ -121,5 +121,40 @@
 </main>
 
 <script type="module" src="js/console.js"></script>
+<!-- Deliberately NOT type="module": module scripts are blocked over file://,
+     which is the exact condition this needs to report. A classic inline script
+     is the only code that still runs, so it is the only place this can live. -->
+<script>
+(function () {
+  if (location.protocol !== 'file:') return;
+
+  var dir = decodeURIComponent(location.pathname).replace(/\/[^\/]*$/, '');
+  var show = function () {
+    var el = document.createElement('div');
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed;inset:0;z-index:9999;overflow:auto;'
+      + 'background:#0d1117;color:#e6edf3;padding:32px 24px;'
+      + 'font:14px/1.6 -apple-system,system-ui,sans-serif;';
+    el.innerHTML =
+      '<div style="max-width:640px;margin:6vh auto">'
+      + '<h1 style="font-size:19px;margin:0 0 14px">This page has to be served, not opened.</h1>'
+      + '<p style="color:#8b949e;margin:0 0 10px">You opened it as a file. Two things do not work that way: '
+      + 'the camera needs a secure context, and the browser blocks this app&rsquo;s JavaScript modules, '
+      + 'so nothing you see on the page is actually running.</p>'
+      + '<p style="color:#8b949e;margin:0 0 10px">Run this in Terminal:</p>'
+      + '<pre style="background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px 14px;'
+      + 'overflow-x:auto;margin:0 0 12px"><code>cd ' + dir.replace(/[&<>]/g, '') + '\n'
+      + 'python3 -m http.server 8000</code></pre>'
+      + '<p style="color:#8b949e;margin:0">Then open '
+      + '<a href="http://localhost:8000" style="color:#58a6ff">http://localhost:8000</a>. '
+      + 'You will know it worked when the Scenario panel lists seven scenarios.</p>'
+      + '</div>';
+    document.body.appendChild(el);
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+  else show();
+})();
+</script>
 </body>
 </html>

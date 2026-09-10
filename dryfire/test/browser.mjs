@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = normalize(join(fileURLToPath(new URL('.', import.meta.url)), '..'));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
@@ -179,6 +179,28 @@ try {
   ok('finds the projection in the browser', !cal.error, cal.error || '');
   ok('corner error under 3px', cal.maxCorner < 3, String(cal.maxCorner));
   ok('maps a corner back to the arena origin', cal.err < 0.01, String(cal.err));
+
+  console.log('opened as a file instead of served');
+  {
+    // The failure mode a first-time user actually hits. Over file:// the module
+    // scripts never load, so the page renders as inert HTML with no scenarios
+    // and a camera button that cannot work. The guard has to be a classic
+    // inline script, because it is the only code that still runs here.
+    const filePage = await context.newPage();
+    await filePage.goto(pathToFileURL(join(ROOT, 'index.html')).href);
+    await filePage.waitForTimeout(300);
+
+    ok('the file:// guard appears', await filePage.$('[role=alert]') !== null);
+    const command = await filePage.textContent('[role=alert] code').catch(() => '');
+    ok('it names the directory to serve', command.includes(ROOT.replace(/\/$/, '')), command);
+    ok('it gives the serve command', command.includes('http.server'), command);
+    ok('modules really are blocked over file://',
+      (await filePage.$$('.scenario')).length === 0, 'scenarios rendered unexpectedly');
+    await filePage.close();
+
+    // ...and it must stay out of the way when the page is served properly.
+    ok('the guard stays hidden when served', await consolePage.$('[role=alert]') === null);
+  }
 
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } finally {
