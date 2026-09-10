@@ -26,6 +26,9 @@ const state = {
   shots: [],
   mouseShots: false,
   showMarkers: true,
+  // Fraction of full brightness the arena renders at. Below 1 by default so a
+  // laser has room to read brighter than the projected image.
+  brightness: 0.55,
   video: null,
   countdown: null,
 };
@@ -81,12 +84,12 @@ function drawBackdrop(name) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W(), H());
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+  ctx.strokeStyle = ink(INK.zone, 0.045);
   ctx.lineWidth = Math.max(1, W() / 1400);
 
   if (name === 'street') {
     // Building silhouettes give a horizon to judge target size against.
-    ctx.fillStyle = 'rgba(255,255,255,0.035)';
+    ctx.fillStyle = ink(INK.zone, 0.035);
     let x = 0;
     let i = 0;
     while (x < 1) {
@@ -96,7 +99,7 @@ function drawBackdrop(name) {
       x += w;
       i++;
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillStyle = ink(INK.zone, 0.05);
     ctx.fillRect(0, py(0.62), W(), Math.max(1, py(0.004)));
   } else if (name === 'room') {
     // A doorway and floor line, so pop-ups read as coming from somewhere.
@@ -115,28 +118,61 @@ function drawBackdrop(name) {
   }
 }
 
-const ACTOR_STYLE = {
-  threat:   { body: '#7c2530', edge: '#c8434f', head: '#a03040' },
-  noshoot:  { body: '#1d4f6b', edge: '#3fa9d8', head: '#276685' },
+// Arena brightness.
+//
+// A laser is only detectable if it makes the camera pixel brighter than what
+// the projector is already putting at that spot. Render near-white and the
+// camera is already saturated there, so the laser adds nothing and the shot is
+// simply invisible. That is why hits used to register on the dark verify grid
+// but not on a bright target: the targets were drawn at peak 216 and their
+// outlines at 255, leaving the detector no headroom at all.
+//
+// Everything drawn here goes through ink(), which scales the palette down so
+// the arena stays well below the sensor's ceiling. The one exception is the
+// calibration flash, which must be true white to be found at all.
+const INK = {
+  text: [230, 237, 243],
+  dim: [139, 148, 158],
+  threat: [150, 44, 58],
+  threatEdge: [210, 70, 83],
+  noshoot: [32, 88, 119],
+  noshootEdge: [70, 180, 230],
+  noshootMark: [120, 215, 255],
+  plate: [225, 220, 208],
+  plateEdge: [245, 242, 232],
+  zone: [255, 255, 255],
+  good: [63, 185, 80],
+  bad: [248, 81, 73],
+  head: [210, 255, 120],
+  accent: [88, 166, 255],
 };
-const PLATE_STYLE = { body: '#d8d4c8', edge: '#f2eee2' };
+
+function ink(rgb, alpha = 1) {
+  const k = state.brightness;
+  return `rgba(${Math.round(rgb[0] * k)}, ${Math.round(rgb[1] * k)}, ${Math.round(rgb[2] * k)}, ${alpha})`;
+}
+
+const ACTOR_INK = {
+  threat: { body: INK.threat, edge: INK.threatEdge },
+  noshoot: { body: INK.noshoot, edge: INK.noshootEdge },
+};
 
 function drawActor(place) {
   const { actor, outline, zones } = place;
   const spec = actor.spec;
 
   if (actor.def.type === 'plate') {
-    fillPolygon(outline, PLATE_STYLE.body, PLATE_STYLE.edge, Math.max(2, W() / 700));
+    fillPolygon(outline, ink(INK.plate), ink(INK.plateEdge), Math.max(2, W() / 700));
     return;
   }
 
-  const style = ACTOR_STYLE[spec.role] ?? ACTOR_STYLE.threat;
-  fillPolygon(outline, style.body, style.edge, Math.max(2, W() / 900));
+  const style = ACTOR_INK[spec.role] ?? ACTOR_INK.threat;
+  fillPolygon(outline, ink(style.body), ink(style.edge), Math.max(2, W() / 900));
 
   // Scoring zones are drawn faintly. An operator coaching someone needs to see
   // where the boundaries are; a solid overlay would turn it into an aim point.
   for (let i = 0; i < zones.length; i++) {
-    fillPolygon(zones[i], 'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.20)', Math.max(1, W() / 1600));
+    fillPolygon(zones[i], ink(INK.zone, 0.07), ink(INK.zone, 0.20), Math.max(1, W() / 1600));
   }
 
   if (spec.role === 'noshoot') {
@@ -147,7 +183,7 @@ function drawActor(place) {
     }), { minX: 1, maxX: 0, minY: 1 });
     const cx = px((b.minX + b.maxX) / 2);
     const r = Math.max(6, (px(b.maxX) - px(b.minX)) * 0.22);
-    ctx.strokeStyle = '#6fd3ff';
+    ctx.strokeStyle = ink(INK.noshootMark);
     ctx.lineWidth = Math.max(2, W() / 800);
     ctx.beginPath();
     ctx.arc(cx, py(b.minY) - r * 1.5, r, 0, Math.PI * 2);
@@ -179,9 +215,9 @@ function drawShots(now) {
     // which removes the loop at the source. The console's suppression is what
     // actually guarantees it; this just stops relying on that alone.
     const g = ctx.createRadialGradient(px(s.x), py(s.y), 0, px(s.x), py(s.y), r);
-    g.addColorStop(0, s.color.replace('ALPHA', (alpha * 0.55).toFixed(3)));
-    g.addColorStop(0.55, s.color.replace('ALPHA', (alpha * 0.3).toFixed(3)));
-    g.addColorStop(1, s.color.replace('ALPHA', '0'));
+    g.addColorStop(0, ink(s.rgb, alpha * 0.55));
+    g.addColorStop(0.55, ink(s.rgb, alpha * 0.3));
+    g.addColorStop(1, ink(s.rgb, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(px(s.x), py(s.y), r, 0, Math.PI * 2);
@@ -197,7 +233,7 @@ function drawHud() {
 
   ctx.font = `600 ${fs}px -apple-system, system-ui, sans-serif`;
   ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(230,237,243,0.82)';
+  ctx.fillStyle = ink(INK.text, 0.82);
   ctx.textAlign = 'left';
   ctx.fillText(state.scenario.name, pad, pad);
 
@@ -206,13 +242,13 @@ function drawHud() {
   ctx.fillText(`${secs}s`, W() / 2, pad);
 
   ctx.textAlign = 'right';
-  ctx.fillStyle = e.score < 0 ? '#ff7b72' : 'rgba(230,237,243,0.82)';
+  ctx.fillStyle = e.score < 0 ? ink(INK.bad) : ink(INK.text, 0.82);
   ctx.fillText(`${e.score}`, W() - pad, pad);
 
   if (state.caption) {
     ctx.textAlign = 'center';
     ctx.font = `600 ${Math.round(fs * 1.35)}px -apple-system, system-ui, sans-serif`;
-    ctx.fillStyle = 'rgba(230,237,243,0.92)';
+    ctx.fillStyle = ink(INK.text, 0.92);
     ctx.fillText(state.caption, W() / 2, py(0.10));
   }
 }
@@ -223,7 +259,7 @@ function drawCountdown() {
   if (left <= 0) return;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(230,237,243,0.9)';
+  ctx.fillStyle = ink(INK.text, 0.9);
   ctx.font = `700 ${Math.round(W() / 9)}px -apple-system, system-ui, sans-serif`;
   ctx.fillText(String(Math.ceil(left / 1000)), W() / 2, H() / 2);
 }
@@ -231,16 +267,16 @@ function drawCountdown() {
 function drawResult() {
   const r = state.result;
   if (!r) return;
-  ctx.fillStyle = 'rgba(5,8,12,0.82)';
+  ctx.fillStyle = 'rgba(5, 8, 12, 0.86)';
   ctx.fillRect(0, 0, W(), H());
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = r.outcome === 'win' ? '#3fb950' : '#f85149';
+  ctx.fillStyle = r.outcome === 'win' ? ink(INK.good) : ink(INK.bad);
   ctx.font = `700 ${Math.round(W() / 14)}px -apple-system, system-ui, sans-serif`;
   ctx.fillText(r.outcome === 'win' ? 'CLEAR' : 'FAILED', W() / 2, py(0.34));
 
-  ctx.fillStyle = 'rgba(230,237,243,0.85)';
+  ctx.fillStyle = ink(INK.text, 0.85);
   ctx.font = `500 ${Math.round(W() / 38)}px -apple-system, system-ui, sans-serif`;
   ctx.fillText(r.reason || '', W() / 2, py(0.46));
 
@@ -253,7 +289,7 @@ function drawResult() {
   if (r.stats.noshoot) lines.push(`${r.stats.noshoot} no-shoot hit${r.stats.noshoot > 1 ? 's' : ''}`);
 
   ctx.font = `500 ${Math.round(W() / 48)}px -apple-system, system-ui, sans-serif`;
-  ctx.fillStyle = 'rgba(139,148,158,0.95)';
+  ctx.fillStyle = ink(INK.dim, 0.95);
   ctx.fillText(lines.join('     '), W() / 2, py(0.58));
 }
 
@@ -269,17 +305,17 @@ function drawCalibration() {
 function drawVerify() {
   ctx.fillStyle = '#0b1016';
   ctx.fillRect(0, 0, W(), H());
-  ctx.strokeStyle = 'rgba(110,190,255,0.5)';
+  ctx.strokeStyle = ink(INK.accent, 0.5);
   ctx.lineWidth = Math.max(1, W() / 1200);
   for (let i = 1; i < 6; i++) {
     ctx.beginPath(); ctx.moveTo(px(i / 6), 0); ctx.lineTo(px(i / 6), H()); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, py(i / 6)); ctx.lineTo(W(), py(i / 6)); ctx.stroke();
   }
-  ctx.strokeStyle = '#58a6ff';
+  ctx.strokeStyle = ink(INK.accent);
   ctx.lineWidth = Math.max(3, W() / 300);
   ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, W() - ctx.lineWidth, H() - ctx.lineWidth);
 
-  ctx.fillStyle = 'rgba(230,237,243,0.75)';
+  ctx.fillStyle = ink(INK.text, 0.75);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `600 ${Math.max(14, Math.round(W() / 60))}px -apple-system, system-ui, sans-serif`;
@@ -291,11 +327,11 @@ function drawIdle() {
   ctx.fillRect(0, 0, W(), H());
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(139,148,158,0.75)';
+  ctx.fillStyle = ink(INK.dim, 0.75);
   ctx.font = `600 ${Math.max(14, Math.round(W() / 46))}px -apple-system, system-ui, sans-serif`;
   ctx.fillText('Arena ready', W() / 2, py(0.47));
   ctx.font = `400 ${Math.max(12, Math.round(W() / 72))}px -apple-system, system-ui, sans-serif`;
-  ctx.fillStyle = 'rgba(139,148,158,0.5)';
+  ctx.fillStyle = ink(INK.dim, 0.5);
   ctx.fillText('Drag this window to the projector, then press F for fullscreen.', W() / 2, py(0.55));
 }
 
@@ -367,11 +403,11 @@ requestAnimationFrame(frame);
 
 // --- engine wiring ---------------------------------------------------------
 
-const SHOT_COLOR = {
-  hit: 'rgba(63,185,80,ALPHA)',
-  head: 'rgba(210,255,120,ALPHA)',
-  penalty: 'rgba(248,81,73,ALPHA)',
-  miss: 'rgba(139,148,158,ALPHA)',
+const SHOT_INK = {
+  hit: INK.good,
+  head: INK.head,
+  penalty: INK.bad,
+  miss: INK.dim,
 };
 
 function onEngineEvent(type, payload) {
@@ -392,7 +428,7 @@ function onEngineEvent(type, payload) {
     if (payload.role === 'noshoot') key = 'penalty';
     else if (payload.zone === 'head') key = 'head';
     else if (payload.actor) key = 'hit';
-    state.shots.push({ x: payload.x, y: payload.y, t: performance.now(), color: SHOT_COLOR[key] });
+    state.shots.push({ x: payload.x, y: payload.y, t: performance.now(), rgb: SHOT_INK[key] });
     if (key === 'penalty') sfx.penalty();
     else if (key === 'head') sfx.headshot();
     else if (key === 'hit') sfx.hit();
@@ -455,12 +491,13 @@ bus.on('scenario:stop', () => { state.mode = MODE.IDLE; state.engine = null; sta
 bus.on('settings', (s) => {
   if (s.mouseShots != null) state.mouseShots = s.mouseShots;
   if (s.showMarkers != null) state.showMarkers = s.showMarkers;
+  if (s.brightness != null) state.brightness = Math.max(0.15, Math.min(1, s.brightness));
 });
 bus.on('ping', () => bus.send('ready', { mode: state.mode }));
 
 function applyShot({ x, y, color }) {
   if (state.mode === MODE.VERIFY) {
-    state.shots.push({ x, y, t: performance.now(), color: SHOT_COLOR.hit });
+    state.shots.push({ x, y, t: performance.now(), rgb: SHOT_INK.hit });
     sfx.hit();
     return;
   }

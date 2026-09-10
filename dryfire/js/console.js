@@ -45,6 +45,9 @@ const app = {
   recentShots: [],
   suppressor: new ShotSuppressor(),
   echoes: 0,
+  arenaMask: null,
+  headroomAt: 0,
+  brightness: 0.55,
   session: null,
   params: { ...DEFAULT_PARAMS },
 };
@@ -63,10 +66,92 @@ function loadStored() {
       app.homography = homographyFromQuads(cal.corners, ARENA_QUAD);
     }
     const p = JSON.parse(localStorage.getItem(STORE_PARAMS) || 'null');
-    if (p) app.params = { ...DEFAULT_PARAMS, ...p };
+    if (p) {
+      app.params = { ...DEFAULT_PARAMS, ...p.detector ?? p };
+      if (p.brightness) app.brightness = p.brightness;
+    }
   } catch {
     // A corrupt or blocked store is not worth failing startup over; defaults
     // are always usable and the operator can simply calibrate again.
+  }
+}
+
+// Which processing pixels fall inside the projected arena.
+//
+// Built once per calibration so the per-frame headroom measurement can look at
+// the projected image alone, rather than being skewed by a lamp or a window
+// elsewhere in the camera's view.
+function buildArenaMask() {
+  if (!app.homography || !app.proc.width) { app.arenaMask = null; return; }
+  const w = app.proc.width;
+  const h = app.proc.height;
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const a = applyHomography(app.homography, x, y);
+      if (a && a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) mask[y * w + x] = 1;
+    }
+  }
+  app.arenaMask = mask;
+}
+
+// How much room a laser has to read brighter than the projected image.
+//
+// The detector fires on a pixel getting suddenly brighter. If the projector
+// already drives the camera to 255 somewhere, nothing can read brighter there
+// and a shot on that spot is invisible: exactly the case where hits register
+// on a dark grid but not on a lit target. Reporting the number turns that from
+// a mystery into something to act on.
+function measureHeadroom(frame) {
+  const mask = app.arenaMask;
+  if (!mask) return null;
+
+  const hist = new Uint32Array(256);
+  let count = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const o = i << 2;
+    const d = frame.data;
+    const v = d[o] > d[o + 1] ? (d[o] > d[o + 2] ? d[o] : d[o + 2]) : (d[o + 1] > d[o + 2] ? d[o + 1] : d[o + 2]);
+    hist[v]++;
+    count++;
+  }
+  if (!count) return null;
+
+  // The 99th percentile rather than the maximum: a handful of hot pixels
+  // should not describe the whole projected image.
+  let seen = 0;
+  let p99 = 0;
+  let median = 0;
+  for (let v = 0; v < 256; v++) {
+    seen += hist[v];
+    if (!median && seen >= count * 0.5) median = v;
+    if (seen >= count * 0.99) { p99 = v; break; }
+  }
+  return { p99, median, floor: app.params.minValue };
+}
+
+function renderHeadroom(h) {
+  const el = $('headroom');
+  if (!h) {
+    el.textContent = 'Calibrate to measure how much headroom the laser has.';
+    el.className = 'status';
+    return;
+  }
+  const room = 255 - h.p99;
+  el.innerHTML = `The projected image reads up to <b>${h.p99}</b> of 255 in the camera `
+    + `(typically ${h.median}). A laser has <b>${room}</b> levels of headroom above that.`;
+
+  if (h.p99 >= 250) {
+    el.innerHTML += ' <b>The camera is saturated by the projector, so shots on bright areas cannot register.</b> '
+      + 'Lower the arena brightness above, or lock your camera\'s exposure down.';
+    el.className = 'status bad';
+  } else if (h.p99 >= h.floor) {
+    el.innerHTML += ` The brightness floor is ${h.floor}, so parts of the arena are already above it and could register as shots. `
+      + 'Lower the arena brightness or raise the floor.';
+    el.className = 'status bad';
+  } else {
+    el.className = 'status good';
   }
 }
 
@@ -77,7 +162,9 @@ function saveCalibration() {
 }
 
 function saveParams() {
-  try { localStorage.setItem(STORE_PARAMS, JSON.stringify(app.params)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(STORE_PARAMS, JSON.stringify({ detector: app.params, brightness: app.brightness }));
+  } catch { /* ignore */ }
 }
 
 // --- camera ----------------------------------------------------------------
@@ -134,6 +221,7 @@ async function startCamera() {
   preview.parentElement.style.aspectRatio = `${vw} / ${vh}`;
 
   app.detector = new ShotDetector(app.proc.width, app.proc.height, app.params);
+  buildArenaMask();
   $('previewHint').style.display = 'none';
   $('cameraToggle').textContent = 'Stop';
   $('camInfo').textContent = `${vw}x${vh} in, processing at ${app.proc.width}x${app.proc.height}`;
@@ -173,6 +261,14 @@ function loop() {
       + (app.echoes ? `, ${app.echoes} marker echo${app.echoes === 1 ? '' : 'es'} ignored` : '');
 
     if (shot) onShot(shot);
+
+    // Four times a second is plenty: this is a property of the room and the
+    // projector, not something that changes frame to frame.
+    const now = performance.now();
+    if (now - app.headroomAt > 250) {
+      app.headroomAt = now;
+      renderHeadroom(measureHeadroom(frame));
+    }
   }
 
   drawPreview(frame);
@@ -339,6 +435,7 @@ async function autoCalibrate() {
     app.corners = res.corners;
     app.homography = homography;
     saveCalibration();
+    buildArenaMask();
     $('detNote').classList.add('hidden');
     setCalStatus(`Calibrated. The projection fills ${(res.diagnostics.regionFraction * 100).toFixed(0)}% of the camera view. Use Verify to confirm.`, 'good');
   } finally {
@@ -516,6 +613,7 @@ function confirmCorners() {
   $('preview').classList.remove('picking');
   $('confirmCorners').classList.add('hidden');
   saveCalibration();
+  buildArenaMask();
   bus.send('idle');
   setCalStatus('Corners set by hand. Use Verify to confirm.', 'good');
 }
@@ -524,6 +622,7 @@ function clearCalibration() {
   app.corners = null;
   app.homography = null;
   app.picks = [];
+  app.arenaMask = null;
   try { localStorage.removeItem(STORE_CAL); } catch { /* ignore */ }
   updateCalStatus();
 }
@@ -665,7 +764,10 @@ function setArenaOpen(open) {
 
 // --- wiring ----------------------------------------------------------------
 
-bus.on('ready', () => setArenaOpen(true));
+bus.on('ready', () => {
+  setArenaOpen(true);
+  bus.send('settings', { brightness: app.brightness, showMarkers: $('showMarkers').checked });
+});
 bus.on('scenario:loaded', ({ name }) => { $('liveStage').textContent = `Loaded: ${name}`; });
 
 bus.on('shot:result', (rec) => {
@@ -716,6 +818,17 @@ $('startRun').addEventListener('click', startRun);
 $('stopRun').addEventListener('click', stopRun);
 $('mouseShots').addEventListener('change', (e) => bus.send('settings', { mouseShots: e.target.checked }));
 $('showMarkers').addEventListener('change', (e) => bus.send('settings', { showMarkers: e.target.checked }));
+
+const brightEl = $('brightness');
+brightEl.value = Math.round(app.brightness * 100);
+$('outBright').textContent = `${brightEl.value}%`;
+const pushBrightness = () => {
+  app.brightness = Number(brightEl.value) / 100;
+  $('outBright').textContent = `${brightEl.value}%`;
+  bus.send('settings', { brightness: app.brightness });
+  saveParams();
+};
+brightEl.addEventListener('input', pushBrightness);
 
 for (const [id, key, out] of [['minValue', 'minValue', 'outValue'], ['minRise', 'minRise', 'outRise'], ['maxPixels', 'maxPixels', 'outMax']]) {
   const el = $(id);

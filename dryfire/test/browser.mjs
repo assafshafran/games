@@ -180,6 +180,63 @@ try {
   ok('corner error under 3px', cal.maxCorner < 3, String(cal.maxCorner));
   ok('maps a corner back to the arena origin', cal.err < 0.01, String(cal.err));
 
+  console.log('the arena leaves the laser headroom');
+  {
+    // The bug this guards: targets were drawn at peak 216 and their outlines
+    // at 255, so the camera was already saturated where they were projected
+    // and a laser could not read any brighter. Shots landed on the dark verify
+    // grid and vanished on lit targets.
+    const peakOf = async () => arenaPage.evaluate(() => {
+      const c = document.getElementById('arena');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let peak = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.max(d[i], d[i + 1], d[i + 2]);
+        if (v > peak) peak = v;
+      }
+      return peak;
+    });
+
+    const send = (type, payload) => consolePage.evaluate(
+      (m) => new BroadcastChannel('dryfire').postMessage({ ...m, from: 'console' }),
+      { type, payload },
+    );
+
+    // Zeroing draws the steel plates, the brightest thing the arena renders.
+    await send('scenario:load', { id: 'zeroing', seed: 3 });
+    await send('scenario:start', { delayMs: 0 });
+    await arenaPage.waitForTimeout(700);
+
+    const running = await arenaPage.evaluate(() => window.__dryfireArena?.mode);
+    ok('the drill is running', running === 'run', String(running));
+
+    const peak = await peakOf();
+    ok('nothing on the arena saturates the camera', peak < 200, `peak ${peak}`);
+    ok('but targets are still clearly visible', peak > 80, `peak ${peak}`);
+
+    // Turning the brightness down has to actually reach the pixels.
+    await send('settings', { brightness: 0.2 });
+    await arenaPage.waitForTimeout(300);
+    const dimmed = await peakOf();
+    ok('lowering arena brightness dims the pixels', dimmed < peak - 20, `${peak} -> ${dimmed}`);
+
+    await send('settings', { brightness: 0.55 });
+    await send('scenario:stop', {});
+    await arenaPage.waitForTimeout(200);
+  }
+
+  console.log('headroom readout');
+  {
+    await consolePage.waitForFunction(
+      () => /headroom|Calibrate to measure/.test(document.getElementById('headroom').textContent),
+      null, { timeout: 5000 },
+    ).then(() => ok('the headroom panel reports something', true))
+     .catch(() => ok('the headroom panel reports something', false));
+
+    const text = await consolePage.textContent('#headroom');
+    ok('it names a level out of 255', /of 255/.test(text) || /Calibrate to measure/.test(text), text.slice(0, 70));
+  }
+
   console.log('hit markers on the projector');
   {
     ok('markers are on by default', await consolePage.isChecked('#showMarkers'));

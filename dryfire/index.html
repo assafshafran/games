@@ -73,7 +73,13 @@
         <input type="range" id="maxPixels" min="50" max="4000" step="25">
         <p class="muted tiny">This is what separates a laser dot from the projector. Keep it well under the size of any bright patch on screen.</p>
       </div>
+      <div class="slider">
+        <label>Arena brightness <output id="outBright"></output></label>
+        <input type="range" id="brightness" min="15" max="100" step="5">
+        <p class="muted tiny">The projector must stay dimmer than your laser or the camera saturates and the shot cannot register. Lower this if hits land on dark backgrounds but not on bright targets.</p>
+      </div>
       <div class="row small muted"><span id="detStats">idle</span></div>
+      <div id="headroom" class="status">Calibrate to measure how much headroom the laser has.</div>
       <div id="detNote" class="status bad hidden"></div>
     </div>
 

@@ -94,7 +94,19 @@ matter.
 land where you aimed. If they are consistently offset, calibrate again; if they
 are offset by a growing amount toward one edge, the camera moved.
 
-**7. Tune detection.** Open "Show what the detector sees". Candidate pixels are
+**7. Check the headroom.** The detection panel reports how bright the projected
+image reads in your camera, and how many levels a laser has above that. A laser
+can only be detected by making a pixel brighter than what the projector already
+puts there, so if the camera is already saturated the shot is invisible. The
+panel turns red and says so when that happens. Fix it by lowering **arena
+brightness**, or by locking your camera's exposure down if it allows that.
+
+The arena renders at 55% brightness for this reason, which puts its brightest
+pixel around 135 of 255. That is well below the detector's floor, so the arena
+itself can never register as a shot, and well below saturation, so a laser
+always has room to stand out.
+
+**8. Tune detection.** Open "Show what the detector sees". Candidate pixels are
 painted magenta. Nothing should light up while the arena is idle. If the
 projected image is registering, raise the brightness floor. If your laser is
 being missed, lower it. The blob size ceiling is what actually separates a
@@ -136,7 +148,7 @@ The engine is ready for it whenever you have footage.
 
 ```bash
 node test/logic.mjs                     # 82 checks, no browser, no hardware
-npm install && node test/browser.mjs   # 36 checks in real Chromium
+npm install && node test/browser.mjs   # 42 checks in real Chromium
 ```
 
 The logic tests cover the geometry, the detector, calibration against synthetic
@@ -204,6 +216,14 @@ asked the arena to light up, and the marker is drawn as a broad soft disc
 rather than a crisp ring. The detector panel counts any it ignores as "marker
 echoes". If you still see a trail, untick "Hit markers on the projector" and
 watch shots in the console preview instead.
+
+**Shots register on the verify grid but not during a drill.** The verify grid
+is dark, so a laser stands out easily. If the arena is rendering brighter than
+your camera can resolve above, a shot on a lit target has nothing to stand out
+against and simply never registers. Read the headroom line in the detection
+panel: if the projected image is reading near 255, lower the arena brightness
+until it is not. Locking the camera's exposure down does the same job from the
+other end.
 
 **Shots register when nobody fired.** The brightness floor is too low or the
 blob ceiling too high, and the projected image is triggering it. Turn on the
