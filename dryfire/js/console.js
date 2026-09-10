@@ -770,10 +770,19 @@ bus.on('ready', () => {
 });
 bus.on('scenario:loaded', ({ name }) => { $('liveStage').textContent = `Loaded: ${name}`; });
 
-bus.on('shot:result', (rec) => {
+bus.on('shot:result', ({ shot, total, stats }) => {
   if (!app.session) return;
-  app.session.shots.push(rec);
-  appendShot(rec, app.session.shots.length);
+  app.session.shots.push(shot);
+  appendShot(shot, app.session.shots.length);
+  setLive({ score: total, shots: stats.shots, hits: stats.hits, noshoot: stats.noshoot });
+});
+
+// Which stage a branching drill has reached. A multi-stage scenario otherwise
+// gives the operator no sign of progress until it ends.
+bus.on('stage', ({ id, caption }) => {
+  if (!app.session) return;
+  $('liveStage').textContent = caption || `Stage: ${id}`;
+  $('liveStage').className = 'status';
 });
 
 bus.on('finish', (payload) => {

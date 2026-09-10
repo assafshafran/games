@@ -84,10 +84,28 @@ function mozambique(rng) {
         backdrop: 'range',
         duration: 12000,
         actors: [
-          { id: 'hostile', type: 'threat', track: stand(x, 0.94, 0.8), downOn: ['head'] },
+          {
+            id: 'hostile',
+            type: 'threat',
+            track: stand(x, 0.94, 0.8),
+            // Nothing drops this target. A head shot would otherwise leave no
+            // threats standing and win the drill by the default rule, before
+            // the sequence below had been satisfied.
+            downOn: [],
+          },
         ],
         transitions: [
-          { on: 'hit', actor: 'hostile', zone: 'head', outcome: 'win', reason: 'failure drill complete' },
+          // The head shot only finishes the drill once centre mass has been
+          // hit twice, which is the drill. A head shot before that scores but
+          // does not end the run.
+          {
+            on: 'hit',
+            actor: 'hostile',
+            zone: 'head',
+            requires: { actor: 'hostile', zone: 'centre', count: 2 },
+            outcome: 'win',
+            reason: 'failure drill complete',
+          },
           { on: 'timeout', outcome: 'lose', reason: 'par time expired' },
         ],
       },

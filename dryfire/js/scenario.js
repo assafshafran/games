@@ -209,7 +209,9 @@ export class ScenarioEngine {
     }
 
     // A drill can demand a specific zone, which is how a hostage rescue
-    // refuses to accept anything but a head shot.
+    // refuses to accept anything but a head shot. An empty list means nothing
+    // drops this target: the drill ends through its own transitions instead,
+    // which is what lets one demand a sequence of hits.
     const required = actor.def.downOn;
     const goesDown = !required || required.includes(result.zone);
     if (goesDown) {
@@ -227,6 +229,22 @@ export class ScenarioEngine {
     }
   }
 
+  // Has the run already recorded enough qualifying hits?
+  //
+  // This is what lets a drill demand a sequence rather than a single shot: the
+  // failure drill's head shot should only finish it once the body has been
+  // hit twice. The shot being judged is already in the log, so a requirement
+  // can also count the hit that triggered the transition.
+  _satisfied({ actor, zone, count = 1 }) {
+    let n = 0;
+    for (const r of this.log) {
+      if (actor != null && r.actor !== actor) continue;
+      if (zone != null && r.zone !== zone) continue;
+      if (++n >= count) return true;
+    }
+    return false;
+  }
+
   // Find the first transition matching this event and follow it.
   // Returns true if the stage changed or the scenario ended.
   _transition(on, ctx, now) {
@@ -234,6 +252,7 @@ export class ScenarioEngine {
       if (t.on !== on) continue;
       if (t.actor != null && t.actor !== ctx.actor) continue;
       if (t.zone != null && t.zone !== ctx.zone) continue;
+      if (t.requires && !this._satisfied(t.requires)) continue;
 
       if (t.outcome) {
         this._finish(t.outcome, t.reason ?? '', now);
@@ -259,6 +278,9 @@ export function validateScenario(s) {
     for (const t of stage.transitions ?? []) {
       if (!t.outcome && !s.stages[t.goto]) {
         problems.push(`stage "${id}" transitions to unknown stage "${t.goto}"`);
+      }
+      if (t.requires && !(t.requires.count > 0)) {
+        problems.push(`stage "${id}" has a transition requiring a count of ${t.requires.count}`);
       }
     }
     for (const a of stage.actors ?? []) {

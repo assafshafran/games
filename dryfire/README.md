@@ -119,7 +119,7 @@ patch on screen.
 |---|---|
 | Zeroing | Three static plates. Confirms calibration and point of aim. |
 | Steel Speed | Five plates against the clock. Transitions and speed. |
-| Failure Drill | Two centre, one head. The head only counts after the body. |
+| Failure Drill | Two centre, then one head. The head only ends it after both. |
 | Advancing Threat | A hostile closes and fires at seven seconds. |
 | Shoot / No-Shoot | Figures appear one at a time. One wrong shot ends the run. |
 | Room Clearing | Three rooms in sequence, mixed hostiles and bystanders. |
@@ -147,8 +147,8 @@ The engine is ready for it whenever you have footage.
 ## Tests
 
 ```bash
-node test/logic.mjs                     # 82 checks, no browser, no hardware
-npm install && node test/browser.mjs   # 42 checks in real Chromium
+node test/logic.mjs                     # 88 checks, no browser, no hardware
+npm install && node test/browser.mjs   # 47 checks in real Chromium
 ```
 
 The logic tests cover the geometry, the detector, calibration against synthetic

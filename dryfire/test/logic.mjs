@@ -473,15 +473,38 @@ function testDrills() {
   }
 
   {
+    // The failure drill is two to the centre then one to the head, and the
+    // order is the drill. A head shot on its own must not finish it.
+    const { engine } = run('mozambique', 5);
+    const t = advanceTo(engine, 'engage');
+    const head = aim(engine, 'hostile', 0);
+    engine.shoot(head.x, head.y, t + 100);
+    ok('a head shot alone does not end the drill', !engine.finished, String(engine.outcome));
+    ok('but it still scores', engine.score === 10, String(engine.score));
+
+    const centre = aim(engine, 'hostile', 1);
+    engine.shoot(centre.x, centre.y, t + 300);
+    ok('one centre hit is not enough either', !engine.finished, String(engine.outcome));
+    engine.shoot(centre.x, centre.y, t + 500);
+    ok('two centre hits still need the head shot', !engine.finished, String(engine.outcome));
+
+    engine.shoot(head.x, head.y, t + 700);
+    ok('the head shot after two centre hits ends it', engine.outcome === 'win', String(engine.outcome));
+    ok('10 + 7 + 7 + 10 scores 34', engine.score === 34, String(engine.score));
+  }
+
+  {
+    // In the intended order.
     const { engine } = run('mozambique', 5);
     const t = advanceTo(engine, 'engage');
     const centre = aim(engine, 'hostile', 1);
     engine.shoot(centre.x, centre.y, t + 100);
-    ok('a centre hit does not end the drill', !engine.finished);
+    engine.shoot(centre.x, centre.y, t + 300);
+    ok('two centre hits alone do not finish it', !engine.finished);
     const head = aim(engine, 'hostile', 0);
-    engine.shoot(head.x, head.y, t + 400);
-    ok('the head shot ends it', engine.outcome === 'win', String(engine.outcome));
-    ok('head scores 10 and centre 7', engine.score === 17, String(engine.score));
+    engine.shoot(head.x, head.y, t + 500);
+    ok('then the head shot wins', engine.outcome === 'win', String(engine.outcome));
+    ok('7 + 7 + 10 scores 24', engine.score === 24, String(engine.score));
   }
 
   {

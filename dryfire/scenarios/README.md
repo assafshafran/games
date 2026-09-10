@@ -69,7 +69,7 @@ An actor is a hit region with a motion track.
 | `type` | An archetype from the table below. A typo is an error, not a default. |
 | `z` | Front-most wins a contested shot. No-shoots default to 10, hostiles to 0. |
 | `fireAt` | Milliseconds into the stage at which an unengaged hostile fires. |
-| `downOn` | Zones that neutralise it. Omit and any hit does. |
+| `downOn` | Zones that neutralise it. Omit and any hit does. `[]` means nothing drops it, so the stage ends only through its own transitions. |
 | `track` | Keyframes, sorted by `t`. |
 
 ### Types
@@ -124,6 +124,20 @@ The first matching transition wins, so order them most specific first.
 | `timeout` | The stage's `duration` elapsed. |
 
 Give either `goto` (another stage) or `outcome` with a `reason`.
+
+Add `requires` to demand a sequence rather than a single shot. It counts hits
+already recorded in the run, including the one being judged:
+
+```json
+{ "on": "hit", "actor": "hostile", "zone": "head",
+  "requires": { "actor": "hostile", "zone": "centre", "count": 2 },
+  "outcome": "win" }
+```
+
+That is the failure drill: the head shot only ends it once centre mass has been
+hit twice. Pair it with `"downOn": []` on the target, or the first hit that
+drops the target ends the stage by the default rule below before the sequence
+is complete.
 
 With no matching transition, hitting a no-shoot loses, downing the last hostile
 wins, and a timeout loses. Those defaults mean a simple drill needs no

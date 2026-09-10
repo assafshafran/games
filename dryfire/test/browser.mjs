@@ -180,6 +180,58 @@ try {
   ok('corner error under 3px', cal.maxCorner < 3, String(cal.maxCorner));
   ok('maps a corner back to the arena origin', cal.err < 0.01, String(cal.err));
 
+  console.log('a scored hit reaches the console');
+  {
+    // The whole chain for the Failure Drill: the engine scores the hit, the
+    // arena reports its running totals, the console shows them. The live
+    // counters used to update only when a drill ended, so a hit that scored
+    // correctly looked as though it had been ignored.
+    await consolePage.click('.scenario[data-id="mozambique"]');
+    await consolePage.selectOption('#startDelay', '0');
+    await consolePage.click('#startRun');
+
+    // The drill opens with a briefing stage before the target appears.
+    await arenaPage.waitForFunction(
+      () => window.__dryfireArena?.engine?.stageId === 'engage',
+      null, { timeout: 8000 },
+    );
+
+    // Aim at the centre-mass zone of wherever the target actually spawned.
+    const aim = await arenaPage.evaluate(() => {
+      const e = window.__dryfireArena.engine;
+      const p = e.placements().find((q) => q.actor.id === 'hostile');
+      const poly = p.zones[1];
+      return {
+        x: poly.reduce((s, q) => s + q.x, 0) / poly.length,
+        y: poly.reduce((s, q) => s + q.y, 0) / poly.length,
+      };
+    });
+
+    await consolePage.evaluate((a) => new BroadcastChannel('dryfire').postMessage({
+      type: 'shot', payload: { x: a.x, y: a.y, color: 'red' }, from: 'console',
+    }), aim);
+    await consolePage.waitForTimeout(400);
+
+    const live = await consolePage.evaluate(() => ({
+      score: document.getElementById('liveScore').textContent,
+      shots: document.getElementById('liveShots').textContent,
+      hits: document.getElementById('liveHits').textContent,
+    }));
+    ok('the shot is counted while the drill is still running', live.shots === '1', JSON.stringify(live));
+    ok('it is counted as a hit, not a miss', live.hits === '1', JSON.stringify(live));
+    ok('centre mass scores 7', live.score === '7', JSON.stringify(live));
+
+    const rows = await consolePage.$$eval('#shotLog tbody tr', (els) => els.map((e) => e.textContent));
+    ok('the shot log has the row too', rows.length === 1 && /centre/.test(rows[0]), rows.join('|'));
+
+    // A body hit must not drop the target: the drill needs the head shot.
+    const stillUp = await arenaPage.evaluate(() => !window.__dryfireArena.engine.actors[0].down);
+    ok('the target stays up after centre mass', stillUp);
+
+    await consolePage.click('#stopRun');
+    await consolePage.waitForTimeout(200);
+  }
+
   console.log('the arena leaves the laser headroom');
   {
     // The bug this guards: targets were drawn at peak 216 and their outlines

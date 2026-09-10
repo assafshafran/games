@@ -413,6 +413,7 @@ const SHOT_INK = {
 function onEngineEvent(type, payload) {
   if (type === 'stage') {
     state.caption = payload.stage.caption ?? '';
+    bus.send('stage', { id: payload.id, caption: payload.stage.caption ?? '' });
     const vid = payload.stage.video;
     if (vid) {
       const v = ensureVideo();
@@ -433,7 +434,14 @@ function onEngineEvent(type, payload) {
     else if (key === 'head') sfx.headshot();
     else if (key === 'hit') sfx.hit();
     else sfx.miss();
-    bus.send('shot:result', payload);
+    // Send the running totals alongside the shot. Without them the console's
+    // live counters had nothing to update from and sat at zero for the whole
+    // run, which made a hit that scored perfectly well look ignored.
+    bus.send('shot:result', {
+      shot: payload,
+      total: state.engine.score,
+      stats: { ...state.engine.stats },
+    });
   } else if (type === 'finish') {
     state.result = payload;
     state.mode = MODE.RESULT;
