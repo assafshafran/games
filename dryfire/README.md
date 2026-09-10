@@ -135,14 +135,15 @@ The engine is ready for it whenever you have footage.
 ## Tests
 
 ```bash
-node test/logic.mjs      # 55 checks, no browser, no hardware
-npm install && node test/browser.mjs   # 18 checks in real Chromium
+node test/logic.mjs                     # 75 checks, no browser, no hardware
+npm install && node test/browser.mjs   # 33 checks in real Chromium
 ```
 
 The logic tests cover the geometry, the detector, calibration against synthetic
-camera frames, and every scenario at 200 seeds each. The browser tests cover
-module loading, the two windows finding each other, canvas rendering, and the
-camera path using Chromium's fake capture device.
+camera frames including a dim projection and a rounded blob, and every scenario
+at 200 seeds each. The browser tests cover module loading, the two windows
+finding each other, canvas rendering, manual corner dragging, and the camera
+path using Chromium's fake capture device.
 
 ## How it is put together
 
