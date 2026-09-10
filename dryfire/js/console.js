@@ -12,6 +12,7 @@ import { homographyFromQuads, applyHomography, orderCorners } from './homography
 import { listScenarios } from './library.js';
 import { validateScenario } from './scenario.js';
 import { unlock } from './audio.js';
+import { ShotSuppressor } from './suppress.js';
 
 const $ = (id) => document.getElementById(id);
 const bus = new Bus('console');
@@ -42,6 +43,8 @@ const app = {
   arenaOpen: false,
   arenaWindow: null,
   recentShots: [],
+  suppressor: new ShotSuppressor(),
+  echoes: 0,
   session: null,
   params: { ...DEFAULT_PARAMS },
 };
@@ -166,7 +169,8 @@ function loop() {
     const shot = app.detector.detect(frame.data, performance.now());
     const s = app.detector.lastStats;
     $('detStats').textContent =
-      `${s.candidates} bright px, ${s.clusters} blob${s.clusters === 1 ? '' : 's'}, ${s.rejected} rejected`;
+      `${s.candidates} bright px, ${s.clusters} blob${s.clusters === 1 ? '' : 's'}, ${s.rejected} rejected`
+      + (app.echoes ? `, ${app.echoes} marker echo${app.echoes === 1 ? '' : 'es'} ignored` : '');
 
     if (shot) onShot(shot);
   }
@@ -190,6 +194,16 @@ function onShot(shot) {
   const arena = applyHomography(app.homography, shot.x, shot.y);
   // Outside the projected area: the shooter missed the screen entirely.
   if (!arena || arena.x < -0.02 || arena.x > 1.02 || arena.y < -0.02 || arena.y > 1.02) return;
+
+  // The camera can see the hit marker the arena just drew, and a marker looks
+  // exactly like a laser to the detector. Drop anything arriving from a point
+  // we ourselves lit up.
+  const now = performance.now();
+  if (app.suppressor.blocked(arena.x, arena.y, now)) {
+    app.echoes++;
+    return;
+  }
+  app.suppressor.mark(arena.x, arena.y, now);
 
   bus.send('shot', { x: arena.x, y: arena.y, color: shot.color });
 }
@@ -593,6 +607,8 @@ function startRun() {
   }
   bus.send('scenario:start', { delayMs });
 
+  app.suppressor.clear();
+  app.echoes = 0;
   app.session = { scenario: app.scenario, startedAt: Date.now(), shots: [], result: null };
   $('shotLog').tBodies[0].innerHTML = '';
   $('stopRun').disabled = false;
@@ -699,6 +715,7 @@ $('scenarioFile').addEventListener('change', (e) => {
 $('startRun').addEventListener('click', startRun);
 $('stopRun').addEventListener('click', stopRun);
 $('mouseShots').addEventListener('change', (e) => bus.send('settings', { mouseShots: e.target.checked }));
+$('showMarkers').addEventListener('change', (e) => bus.send('settings', { showMarkers: e.target.checked }));
 
 for (const [id, key, out] of [['minValue', 'minValue', 'outValue'], ['minRise', 'minRise', 'outRise'], ['maxPixels', 'maxPixels', 'outMax']]) {
   const el = $(id);

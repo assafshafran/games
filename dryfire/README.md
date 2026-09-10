@@ -135,8 +135,8 @@ The engine is ready for it whenever you have footage.
 ## Tests
 
 ```bash
-node test/logic.mjs                     # 75 checks, no browser, no hardware
-npm install && node test/browser.mjs   # 33 checks in real Chromium
+node test/logic.mjs                     # 82 checks, no browser, no hardware
+npm install && node test/browser.mjs   # 36 checks in real Chromium
 ```
 
 The logic tests cover the geometry, the detector, calibration against synthetic
@@ -158,6 +158,7 @@ path using Chromium's fake capture device.
 | `js/library.js` | The built-in scenarios. |
 | `js/arena.js` | The projector window. |
 | `js/console.js` | The control window. |
+| `js/suppress.js` | Stops the camera treating our own hit markers as shots. |
 | `js/bus.js` | Messaging between the two. |
 
 The scenario engine lives in the arena window. Rendering needs the full actor
@@ -192,6 +193,17 @@ the flash at all, so it is immune to every auto-exposure problem above.
 
 **Shots register in the wrong place.** Calibration is stale because the camera
 or projector moved. Recalibrate.
+
+**One shot becomes a trail of shots walking across the screen.** This was a
+feedback loop and it is fixed, but it is worth knowing about. The arena draws a
+hit marker on the surface the camera is watching, and a marker is small, bright
+and suddenly present, which is exactly what the detector looks for. So a real
+shot was detected, drawn, seen, detected again slightly offset, and off it
+went. The console now ignores detections coming back from any point it just
+asked the arena to light up, and the marker is drawn as a broad soft disc
+rather than a crisp ring. The detector panel counts any it ignores as "marker
+echoes". If you still see a trail, untick "Hit markers on the projector" and
+watch shots in the console preview instead.
 
 **Shots register when nobody fired.** The brightness floor is too low or the
 blob ceiling too high, and the projected image is triggering it. Turn on the

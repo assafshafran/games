@@ -14,6 +14,7 @@ import { buildScenario, listScenarios } from '../js/library.js';
 import {
   findProjectedQuad, quadFromDifference, peakDifference, accumulateMax, otsuThreshold,
 } from '../js/calibrate.js';
+import { ShotSuppressor, DEFAULT_SUPPRESSION, MARKER_MAX_RADIUS } from '../js/suppress.js';
 import { readFile } from 'node:fs/promises';
 
 let pass = 0;
@@ -308,6 +309,72 @@ function testDimProjection() {
     /too small to calibrate/.test(small.error ?? ''), small.error ?? 'no error');
 }
 
+// The arena draws a hit marker on the surface the camera is watching, and a
+// marker is small, bright and suddenly present, which is what the detector
+// looks for. Left alone, one real shot is detected, drawn, seen, detected
+// again slightly offset, and the run fills with a wandering trail.
+function testFeedbackLoop() {
+  console.log('marker feedback loop');
+
+  ok('the suppressed area is wider than the marker',
+    DEFAULT_SUPPRESSION.radius > MARKER_MAX_RADIUS * 2,
+    `${DEFAULT_SUPPRESSION.radius} vs ${MARKER_MAX_RADIUS}`);
+
+  const ASPECT = 16 / 9;
+
+  // Replay the loop honestly. A phantom detection can only come from where the
+  // marker actually is, so it lands somewhere on the marker's expanding edge.
+  // If it gets through it becomes a new marker, and the trail walks from there.
+  const runLoop = (suppressor) => {
+    let centre = { x: 0.5, y: 0.5 };
+    let markers = 1;
+    suppressor.mark(centre.x, centre.y, 0);
+
+    for (let frame = 1; frame <= 30; frame++) {
+      const t = frame * 33;
+      const r = MARKER_MAX_RADIUS * Math.min(1, frame / 12);
+      const angle = frame * 0.7;
+      const echo = {
+        x: centre.x + r * Math.cos(angle),
+        y: centre.y + r * Math.sin(angle) * ASPECT,
+      };
+      if (!suppressor.blocked(echo.x, echo.y, t)) {
+        markers++;
+        suppressor.mark(echo.x, echo.y, t);
+        centre = echo;
+      }
+    }
+    return markers;
+  };
+
+  // Control: with no suppressed area the loop runs away, which is the bug the
+  // trail on the projector was. If this ever stops happening the test below
+  // proves nothing.
+  ok('without suppression the trail runs away',
+    runLoop(new ShotSuppressor({ radius: 0, ms: 1000 })) > 20,
+    String(runLoop(new ShotSuppressor({ radius: 0, ms: 1000 }))));
+
+  const s = new ShotSuppressor();
+  ok('with suppression only the real shot is drawn', runLoop(s) === 1, String(runLoop(new ShotSuppressor())));
+
+  // A real shot somewhere else must still register.
+  ok('a shot elsewhere is unaffected', !s.blocked(0.2, 0.8, 200));
+
+  // And the same spot frees up once the marker has gone.
+  ok('the same spot works again afterwards',
+    !s.blocked(0.5, 0.5, DEFAULT_SUPPRESSION.ms + 50));
+  ok('expired zones are pruned', s.zones.length === 0, String(s.zones.length));
+
+  // Arena y-units are shorter than x-units on a widescreen arena, so a raw
+  // hypot would suppress an oval. Points the same physical distance away in
+  // each direction must be treated the same.
+  const round = new ShotSuppressor({ radius: 0.05, ms: 1000, aspect: 16 / 9 });
+  round.mark(0.5, 0.5, 0);
+  ok('suppression is round on screen, not in arena units',
+    round.blocked(0.5 + 0.04, 0.5, 10) && round.blocked(0.5, 0.5 + 0.04 * (16 / 9), 10)
+    && !round.blocked(0.5, 0.5 + 0.07 * (16 / 9), 10));
+}
+
 // ---------------------------------------------------------------------------
 
 const centroid = (poly) => ({
@@ -502,6 +569,7 @@ testDetector();
 testCalibration();
 testShapeRejection();
 testDimProjection();
+testFeedbackLoop();
 testHostageRescue();
 testDrills();
 testLibrary();

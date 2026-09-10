@@ -180,6 +180,23 @@ try {
   ok('corner error under 3px', cal.maxCorner < 3, String(cal.maxCorner));
   ok('maps a corner back to the arena origin', cal.err < 0.01, String(cal.err));
 
+  console.log('hit markers on the projector');
+  {
+    ok('markers are on by default', await consolePage.isChecked('#showMarkers'));
+
+    // Turning them off must actually reach the arena, since a camera sensitive
+    // enough to see them is the whole reason the switch exists.
+    await consolePage.uncheck('#showMarkers');
+    await consolePage.waitForTimeout(200);
+    ok('the arena hears the switch',
+      await arenaPage.evaluate(() => window.__dryfireArena?.showMarkers === false));
+
+    await consolePage.check('#showMarkers');
+    await consolePage.waitForTimeout(200);
+    ok('and hears it turned back on',
+      await arenaPage.evaluate(() => window.__dryfireArena?.showMarkers === true));
+  }
+
   console.log('manual corner picking');
   {
     await consolePage.click('#manualCal');

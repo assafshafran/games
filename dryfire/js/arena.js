@@ -8,6 +8,7 @@ import { ScenarioEngine } from './scenario.js';
 import { buildScenario } from './library.js';
 import { validateScenario } from './scenario.js';
 import { sfx, unlock } from './audio.js';
+import { MARKER_MAX_RADIUS } from './suppress.js';
 
 const canvas = document.getElementById('arena');
 const ctx = canvas.getContext('2d');
@@ -24,6 +25,7 @@ const state = {
   result: null,
   shots: [],
   mouseShots: false,
+  showMarkers: true,
   video: null,
   countdown: null,
 };
@@ -153,22 +155,36 @@ function drawActor(place) {
   }
 }
 
+// How long a marker stays on screen. The console suppresses detections from a
+// marker's position for the same span, so shortening this shortens the window
+// in which a genuine second shot at the same spot would be dropped.
+const SHOT_LIFE = 1000;
+
 function drawShots(now) {
-  const LIFE = 1400;
-  state.shots = state.shots.filter((s) => now - s.t < LIFE);
+  state.shots = state.shots.filter((s) => now - s.t < SHOT_LIFE);
+  if (!state.showMarkers) return;
+
   for (const s of state.shots) {
-    const age = (now - s.t) / LIFE;
-    const alpha = 1 - age;
-    const r = Math.max(4, W() / 220) * (1 + age * 1.6);
-    ctx.strokeStyle = s.color.replace('ALPHA', alpha.toFixed(3));
-    ctx.lineWidth = Math.max(2, W() / 500);
+    const age = (now - s.t) / SHOT_LIFE;
+    const alpha = (1 - age) * 0.85;
+    const r = Math.max(6, W() * MARKER_MAX_RADIUS) * (0.55 + age * 0.45);
+
+    // A soft filled disc rather than a thin bright ring.
+    //
+    // The camera is watching this surface, and the detector is built to find
+    // something small, bright and suddenly present. A crisp ring is exactly
+    // that, so it used to be detected as a fresh shot, drawn again slightly
+    // offset, and so on into a wandering trail. A broad soft gradient is
+    // larger than the detector's size ceiling and has no hard bright edge,
+    // which removes the loop at the source. The console's suppression is what
+    // actually guarantees it; this just stops relying on that alone.
+    const g = ctx.createRadialGradient(px(s.x), py(s.y), 0, px(s.x), py(s.y), r);
+    g.addColorStop(0, s.color.replace('ALPHA', (alpha * 0.55).toFixed(3)));
+    g.addColorStop(0.55, s.color.replace('ALPHA', (alpha * 0.3).toFixed(3)));
+    g.addColorStop(1, s.color.replace('ALPHA', '0'));
+    ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(px(s.x), py(s.y), r, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = s.color.replace('ALPHA', (alpha * 0.9).toFixed(3));
-    ctx.beginPath();
-    ctx.arc(px(s.x), py(s.y), Math.max(2, W() / 700), 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -436,7 +452,10 @@ bus.on('scenario:custom', ({ scenario }) => {
 });
 bus.on('scenario:start', ({ delayMs }) => startRun(delayMs ?? 3000));
 bus.on('scenario:stop', () => { state.mode = MODE.IDLE; state.engine = null; state.scenario = null; });
-bus.on('settings', (s) => { if (s.mouseShots != null) state.mouseShots = s.mouseShots; });
+bus.on('settings', (s) => {
+  if (s.mouseShots != null) state.mouseShots = s.mouseShots;
+  if (s.showMarkers != null) state.showMarkers = s.showMarkers;
+});
 bus.on('ping', () => bus.send('ready', { mode: state.mode }));
 
 function applyShot({ x, y, color }) {
@@ -476,5 +495,9 @@ window.addEventListener('keydown', (ev) => {
     else document.documentElement.requestFullscreen().catch(() => {});
   }
 });
+
+// Exposed only so the browser tests can assert on arena state; nothing in the
+// app reads it.
+window.__dryfireArena = state;
 
 bus.send('ready', { mode: state.mode });
